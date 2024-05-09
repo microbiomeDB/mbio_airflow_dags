@@ -85,7 +85,7 @@ with DAG(
                                 f"--params {study_params_path} "
                                 f"--input {study_samplesheet_path} "
                                 f"--outdir {study_out_path}"
-                                f" --profile docker")
+                                f"-profile docker")
             
             nextflow_commands.append(nextflow_command)
 

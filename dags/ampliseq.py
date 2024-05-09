@@ -99,7 +99,7 @@ with DAG(
         )
 
     nextflow_commands = process_ampliseq_studies()
-    run_ampliseq.expand(nextflow_commands)
+    run_ampliseq.expand(nextflow_command = nextflow_commands)
 
 if __name__ == "__main__":
     dag.test()

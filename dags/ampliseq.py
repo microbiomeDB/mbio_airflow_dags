@@ -9,9 +9,23 @@ from airflow.models.dataset import Dataset
 from airflow.decorators import task
 from airflow.operators.bash import BashOperator
 
+with DAG(dag_id="simple_mapping", start_date=datetime(2022, 3, 4)) as dag:
+
+    @task
+    def add_one(x: int):
+        return x + 1
+
+    @task
+    def sum_it(values):
+        total = sum(values)
+        print(f"Total was {total}")
+
+    added_values = add_one.expand(x=[1, 2, 3])
+    sum_it(added_values)
+
 with DAG(
-    dag_id="ampliseq",
-    schedule=[Dataset("/data/MicrobiomeDB/common/amplicon_sequencing/amplicon_studies.csv")],
+    dag_id="automated_ampliseq",
+    schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
     dagrun_timeout=datetime.timedelta(minutes=60),
@@ -23,16 +37,16 @@ with DAG(
 
         # we should configure airflow to rerun this if the DAG changes too
         ampliseq_version = "2.9.0"
+        # TODO what if we move or want to use it in a different context? a good way to configure this?
         base_path = "/data/MicrobiomeDB/common/amplicon_sequencing/"
 
         # first see whats been run before and under what conditions
         # TODO its possible this info is better in a postgres table
         # though its nice to be able to remove a row to force a rerun
         # and thats easier for most people if its in a csv
-        # TODO make a readme file for the base directory that explains
-        # its structure and how to use it
         provenance_path = f"{base_path}/processed_studies_provenance.csv"
         with open(provenance_path, 'r') as file:
+            next(file)
             # Create a CSV DictReader
             reader = csv.DictReader(file)
     
@@ -46,6 +60,7 @@ with DAG(
         paths = []
         all_studies_path = f"{base_path}/amplicon_studies.csv"
         with open(all_studies_path, "r") as file:
+            next(file)
             for line in file:
                 study, path = line.strip().split(",")
                 current_timestamp = os.path.getmtime(path)
@@ -61,35 +76,45 @@ with DAG(
                     studies.append(study)
                     paths.append(path)
 
+        # update code revision etc in processed_studies_provenance.csv
+        with open(provenance_path, 'w') as file:
+            writer = csv.writer(file)
+            writer.writerow(['study', 'timestamp', 'code_revision'])
+            for study in studies:
+                writer.writerow([study, current_timestamp, ampliseq_version])
+
         config_path = f"{base_path}/ampliseq.config" # TODO validate exists
         
+        nextflow_commands = []
         for i in range(len(studies)):
             study = studies[i]
             study_in_path = paths[i]
+            study_samplesheet_path = f"{study_in_path}/samplesheet.csv" # TODO validate exists
             study_params_path = f"{study_in_path}/nf-params.json" # TODO validate exists
             study_out_path = f"{study_in_path}/out"
-            task_name = f"ampliseq_{study}"
 
             nextflow_command = (f"nextflow run nf-core/ampliseq -with-trace "
                                 f"-r {ampliseq_version} "
                                 f"-c {config_path} "
                                 f"--params {study_params_path} "
-                                f"--input {study_in_path} "
-                                f"--outdir {study_out_path}")
+                                f"--input {study_samplesheet_path} "
+                                f"--outdir {study_out_path}"
+                                f" --profile docker")
             
-            sys.stderr.write(f"running {task_name}\n")
-            BashOperator(
-                task_id=task_name,
-                bash_command=nextflow_command,
-                dag="ampliseq"
-            )
+            nextflow_commands.append(nextflow_command)
 
-        # update code revision etc in processed_studies_provenance.csv
-        with open(provenance_path, 'w') as file:
-            writer = csv.writer(file)
-            for study in studies:
-                writer.writerow([study, current_timestamp, ampliseq_version])
+        return(nextflow_commands)
         
+    @task
+    def run_ampliseq(nextflow_command):
+        BashOperator(
+            task_id="run_ampliseq",
+            bash_command=nextflow_command
+        )
+
+    nextflow_commands = process_ampliseq_studies()
+    run_ampliseq.expand(nextflow_commands)
+
 if __name__ == "__main__":
     dag.test()
 

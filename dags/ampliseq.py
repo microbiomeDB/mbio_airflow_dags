@@ -82,7 +82,7 @@ with DAG(
             nextflow_command = (f"nextflow run nf-core/ampliseq -with-trace "
                                 f"-r {ampliseq_version} "
                                 f"-c {config_path} "
-                                f"--params {study_params_path} "
+                                f"--params-file {study_params_path} "
                                 f"--input {study_samplesheet_path} "
                                 f"--outdir {study_out_path} "
                                 f"-profile docker")

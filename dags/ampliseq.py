@@ -93,6 +93,7 @@ with DAG(
         
     @task
     def run_ampliseq(nextflow_command):
+        sys.stderr.write(f"running nextflow command: {nextflow_command}\n")
         BashOperator(
             task_id="run_ampliseq",
             bash_command=nextflow_command

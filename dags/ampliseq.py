@@ -90,17 +90,11 @@ with DAG(
             nextflow_commands.append(nextflow_command)
 
         return(nextflow_commands)
-        
-    @task
-    def run_ampliseq(nextflow_command):
-        sys.stderr.write(f"running nextflow command: {nextflow_command}\n")
-        BashOperator(
-            task_id="run_ampliseq",
-            bash_command=nextflow_command
-        )
 
     nextflow_commands = process_ampliseq_studies()
-    run_ampliseq.expand(nextflow_command = nextflow_commands)
+    BashOperator.partial(task_id="run_ampliseq", do_xcom_push=False).expand(
+        bash_command=nextflow_commands
+    )
 
 if __name__ == "__main__":
     dag.test()

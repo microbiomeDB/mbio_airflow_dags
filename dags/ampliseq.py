@@ -69,7 +69,7 @@ with DAG(
             for study in studies:
                 writer.writerow([study, current_timestamp, ampliseq_version])
 
-        config_path = f"{base_path}/ampliseq.config" # TODO validate exists
+        config_path = f"{base_path}ampliseq.config" # TODO validate exists
         
         nextflow_commands = []
         for i in range(len(studies)):
@@ -84,7 +84,7 @@ with DAG(
                                 f"-c {config_path} "
                                 f"--params {study_params_path} "
                                 f"--input {study_samplesheet_path} "
-                                f"--outdir {study_out_path}"
+                                f"--outdir {study_out_path} "
                                 f"-profile docker")
             
             nextflow_commands.append(nextflow_command)

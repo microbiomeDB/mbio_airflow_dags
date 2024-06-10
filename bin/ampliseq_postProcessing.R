@@ -48,10 +48,16 @@ assayData <- data.table::fread(paste0(outDir, "/dada2/ASV_table.tsv"))
 row.names(assayData) <- assayData$ASV_ID
 assayData$ASV_ID <- NULL
 
+sampleMetadata <- data.table::fread(paste0(outDir, "/sampleMetadata.tsv"))
+names(sampleMetadata)[names(sampleMetadata) == 'name'] <- 'recordIDs'
+
 ## create TreeSummarizedExperiment
 # may have to add picrust results as colData
-# TODO add sampleMetadata
-tse <- TreeSummarizedExperiment::TreeSummarizedExperiment(assays = list('Counts'=assayData), rowData=rowData)
+tse <- TreeSummarizedExperiment::TreeSummarizedExperiment(
+    assays = list('Counts'=assayData), 
+    rowData = rowData, 
+    colData = sampleMetadata
+)
 
 ## save TreeSummarizedExperiment as rda
 save(tse, file=paste0(outDir, "/", studyName, "_treeSE.rda"))
@@ -60,6 +66,7 @@ save(tse, file=paste0(outDir, "/", studyName, "_treeSE.rda"))
 dataset <- MicrobiomeDB::importTreeSE(tse)
 
 ## get and prep picrust data
+## TODO should either validate this exists, or make it optional if it doesnt
 ecData <- data.table::fread(paste0(outDir, "/picrust/EC_pred_metagenome_unstrat_descrip.tsv"))
 koData <- data.table::fread(paste0(outDir, "/picrust/KO_pred_metagenome_unstrat_descrip.tsv"))
 metacycData <- data.table::fread(paste0(outDir, "/picrust/METACYC_path_abun_unstrat_descrip.tsv"))

@@ -71,7 +71,7 @@ with DAG(
 
         config_path = f"{base_path}ampliseq.config" # TODO validate exists
         
-        nextflow_commands = []
+        commands = []
         for i in range(len(studies)):
             study = studies[i]
             study_in_path = paths[i]
@@ -87,13 +87,17 @@ with DAG(
                                 f"--outdir {study_out_path} "
                                 f"-profile docker")
             
-            nextflow_commands.append(nextflow_command)
+            R_command = (f"Rscript ../bin/ampliseq_postProcessing.R {study} {study_out_path}")
 
-        return(nextflow_commands)
+            command = (nextflow_command + "; " + R_command)
 
-    nextflow_commands = process_ampliseq_studies()
+            commands.append(command)
+
+        return(commands)
+
+    commands = process_ampliseq_studies()
     BashOperator.partial(task_id="run_ampliseq", do_xcom_push=False).expand(
-        bash_command=nextflow_commands
+        bash_command=commands
     )
 
 if __name__ == "__main__":

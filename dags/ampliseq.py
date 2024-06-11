@@ -87,7 +87,8 @@ with DAG(
                                 f"--outdir {study_out_path} "
                                 f"-profile docker")
             
-            R_command = (f"Rscript ../bin/ampliseq_postProcessing.R {study} {study_out_path}")
+            # TODO dont want a hardcoded path here
+            R_command = (f"Rscript /home/dcallan/airflow/bin/ampliseq_postProcessing.R {study} {study_out_path}")
 
             command = (nextflow_command + "; " + R_command)
 

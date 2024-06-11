@@ -14,7 +14,6 @@ with DAG(
     schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
-    dagrun_timeout=datetime.timedelta(minutes=60),
 ) as dag:
     @task
     def process_ampliseq_studies():

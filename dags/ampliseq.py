@@ -31,7 +31,6 @@ with DAG(
         # and thats easier for most people if its in a csv
         provenance_path = f"{base_path}/processed_studies_provenance.csv"
         with open(provenance_path, 'r') as file:
-            next(file)
             # Create a CSV DictReader
             reader = csv.DictReader(file)
     

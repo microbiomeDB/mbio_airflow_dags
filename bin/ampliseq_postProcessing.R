@@ -15,8 +15,8 @@ if (is.null(referenceDB)) {
 if (!dir.exists(outDir))
     stop("output directory does not exist: ", outDir)
 
-if (!dir.exists(paste0(outDir, "dada2")))
-    stop("dada2 directory does not exist: ", paste0(outDir, "dada2"))
+if (!dir.exists(paste0(outDir, "/dada2")))
+    stop("dada2 directory does not exist: ", paste0(outDir, "/dada2"))
 
 ## TODO consider asking for specific versions of these packages...
 ############################################################################################

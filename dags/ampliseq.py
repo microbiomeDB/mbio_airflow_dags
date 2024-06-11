@@ -50,7 +50,7 @@ with DAG(
                 current_timestamp = os.path.getmtime(path)
                 processStudy = False
                 if (study in processed_studies):
-                    if ((current_timestamp > int(processed_studies[study]['timestamp'])) or
+                    if ((current_timestamp > float(processed_studies[study]['timestamp'])) or
                         (ampliseq_version != processed_studies[study]['code_revision'])):
                         processStudy = True
                 else:

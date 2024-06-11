@@ -48,16 +48,23 @@ assayData <- data.table::fread(paste0(outDir, "/dada2/ASV_table.tsv"))
 row.names(assayData) <- assayData$ASV_ID
 assayData$ASV_ID <- NULL
 
-sampleMetadata <- data.table::fread(paste0(outDir, "/sampleMetadata.tsv"))
-names(sampleMetadata)[names(sampleMetadata) == 'name'] <- 'recordIDs'
+if (dir.exists(paste0(outDir, "/sampleMetadata.tsv"))) {
+  sampleMetadata <- data.table::fread(paste0(outDir, "/sampleMetadata.tsv"))
+  names(sampleMetadata)[names(sampleMetadata) == 'name'] <- 'recordIDs'
 
-## create TreeSummarizedExperiment
-# may have to add picrust results as colData
-tse <- TreeSummarizedExperiment::TreeSummarizedExperiment(
-    assays = list('Counts'=assayData), 
-    rowData = rowData, 
-    colData = sampleMetadata
-)
+  ## create TreeSummarizedExperiment
+  # may have to add picrust results as colData
+  tse <- TreeSummarizedExperiment::TreeSummarizedExperiment(
+      assays = list('Counts'=assayData), 
+      rowData = rowData, 
+      colData = sampleMetadata
+  )
+} else {
+  tse <- TreeSummarizedExperiment::TreeSummarizedExperiment(
+      assays = list('Counts'=assayData),
+      rowData = rowData
+  )
+}
 
 ## save TreeSummarizedExperiment as rda
 save(tse, file=paste0(outDir, "/", studyName, "_treeSE.rda"))

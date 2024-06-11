@@ -8,7 +8,7 @@ if (length(args) < 1) {
 studyName <- args[1]
 outDir <- args[2]
 referenceDB <- args[3]
-if (is.null(referenceDB)) {
+if (is.na(referenceDB)) {
     referenceDB <- 'silva_138'
 }
 

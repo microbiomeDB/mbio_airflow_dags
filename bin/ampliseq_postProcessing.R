@@ -70,7 +70,7 @@ if (dir.exists(paste0(outDir, "/sampleMetadata.tsv"))) {
 save(tse, file=paste0(outDir, "/", studyName, "_treeSE.rda"))
 
 ## make an MbioDataset, should TSS normalize and keep raw values as well by default
-dataset <- MicrobiomeDB::importTreeSE(tse)
+dataset <- MicrobiomeDB::importTreeSummarizedExperiment(tse)
 
 ## get and prep picrust data
 ## TODO should either validate this exists, or make it optional if it doesnt

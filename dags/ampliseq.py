@@ -76,11 +76,13 @@ with DAG(
             study_samplesheet_path = f"{study_in_path}/samplesheet.csv" # TODO validate exists
             study_params_path = f"{study_in_path}/nf-params.json" # TODO validate exists
             study_out_path = f"{study_in_path}/out"
+            study_work_dir = f"{study_in_path}/work"
 
             nextflow_command = (f"nextflow run nf-core/ampliseq -with-trace "
                                 f"-r {ampliseq_version} "
                                 f"-c {config_path} "
                                 f"-params-file {study_params_path} "
+                                f"-work-dir {study_work_dir}"
                                 f"--input {study_samplesheet_path} "
                                 f"--outdir {study_out_path} "
                                 f"-profile docker")

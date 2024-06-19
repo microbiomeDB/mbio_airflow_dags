@@ -82,7 +82,7 @@ with DAG(
                                 f"-r {ampliseq_version} "
                                 f"-c {config_path} "
                                 f"-params-file {study_params_path} "
-                                f"-work-dir {study_work_dir}"
+                                f"-work-dir {study_work_dir} "
                                 f"--input {study_samplesheet_path} "
                                 f"--outdir {study_out_path} "
                                 f"-profile docker")

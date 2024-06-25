@@ -1,0 +1,6 @@
+{
+    "headNode": "consign.pmacs.upenn.edu",
+    "fileTransferNode": "mercury.pmacs.upenn.edu",
+    "clusterName": "pmacs",
+    "clusterType": "LSF"
+}

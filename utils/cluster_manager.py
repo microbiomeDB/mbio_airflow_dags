@@ -34,10 +34,8 @@ class ClusterManager():
             bash_command=cmd
         )
 
-    # TODO can this return a pid to monitor or something?
-    # How do we know the status of the job? did it fail? does that matter?
-    # presumably this task should gain a failed status if the job fails?
-    def runClusterCommand(self, command):
+    # TODO double check the slurm variant
+    def startClusterJob(self, command, logFile):
 
         if (self.clusterType == "LSF"):
             command = f"bsub {command}"
@@ -47,6 +45,12 @@ class ClusterManager():
             raise Exception(f"Cluster type {self.clusterType} not supported")
 
         cmd = f"ssh -2 {self.clusterLogin}@{self.headNode} '/bin/bash -login -c \"{command}\"'"
+
+        # this grabs the job id returned from the command being submitted
+        if (self.clusterType == "LSF"):
+            cmd += "| awk -F '[<>]' '{print $2}'"
+        elif (self.clusterType == "SLURM"):
+            cmd += "| awk '{print $4}'"
 
         return BashOperator(
             task_id='startClusterJob',

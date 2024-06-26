@@ -5,15 +5,12 @@ import os
 from airflow.models.dag import DAG
 from airflow.decorators import task
 from airflow.operators.bash import BashOperator
-from include.src.airflow.xcom import cleanup
 
 with DAG(
     dag_id="automated_metatdenovo",
     schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
-    on_failure_callback=cleanup,
-    on_success_callback=cleanup
 ) as dag:
     @task
     def process_metatdenovo_studies():

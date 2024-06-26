@@ -2,7 +2,6 @@ import json
 import pendulum
 
 from airflow import DAG
-from include.src.airflow.xcom import cleanup
 from mbio_airflow_dags.utils.ClusterManager import ClusterManager
 
 with DAG(
@@ -10,8 +9,6 @@ with DAG(
         schedule=None,
         start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
         catchup=False,
-        on_failure_callback=cleanup,
-        on_success_callback=cleanup,
         params={'clusterLogin': 'dcallan'}
 ) as dag:
     # TODO make this configurable by user somehow? and not hard coded..

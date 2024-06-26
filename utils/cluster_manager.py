@@ -1,4 +1,5 @@
 from airflow.operators.bash_operator import BashOperator
+from mbio_airflow_dags.utils.cluster_job_sensor import ClusterJobSensor
 
 # TODO consider implementation multiple constructors somehow, to accept a config file and login
 # or maybe that should be the default constructor here, and grow into manual config
@@ -7,12 +8,37 @@ from airflow.operators.bash_operator import BashOperator
 class ClusterManager():
     _instance = None
     def __init__(self, headNode, fileTransferNode, clusterType, clusterLogin, **kwargs):
+        """
+        Initializes a new instance of the ClusterManager class.
+
+        Args:
+            headNode (str): The head node of the cluster.
+            fileTransferNode (str): The file transfer node of the cluster.
+            clusterType (str): The type of the cluster (e.g., LSF, SLURM).
+            clusterLogin (str): The login information for the cluster.
+            **kwargs: Additional keyword arguments.
+
+        Returns:
+            None
+        """
         self.headNode = headNode # from config
         self.fileTransferNode = fileTransferNode # from config
         self.clusterType = clusterType # from config
         self.clusterLogin = clusterLogin # user param
 
     def copyToCluster(self, fromDir, fromFile, toDir, gzip=False):
+        """
+        Copies a file to the cluster. The file will be gzipped if gzip is set to True.
+
+        Args:
+            fromDir (str): The directory where the file is located on the local machine.
+            fromFile (str): The name of the file to be copied.
+            toDir (str): The directory where the file will be copied on the cluster.
+            gzip (bool, optional): Whether to gzip the file. Defaults to False.
+
+        Returns:
+            None
+        """
         # TODO validate inputs, all should be strings except gzip which should be boolean
 
         # TODO shouldnt be hardcoded path
@@ -24,6 +50,19 @@ class ClusterManager():
         )
 
     def copyFromCluster(self, fromDir, fromFile, toDir, deleteAfterCopy=False, gzip=False):
+        """
+        Copies a file from the cluster. The file will be gzipped if gzip is set to True.
+
+        Args:
+            fromDir (str): The directory where the file is located on the cluster.
+            fromFile (str): The name of the file to be copied.
+            toDir (str): The directory where the file will be copied on the local machine.
+            deleteAfterCopy (bool, optional): Whether to delete the file from the cluster after it has been copied. Defaults to False.
+            gzip (bool, optional): Whether to gzip the file. Defaults to False.
+
+        Returns:
+            None
+        """
         # TODO validate inputs
 
         # TODO shouldnt be hardcoded path
@@ -35,7 +74,16 @@ class ClusterManager():
         )
 
     # TODO double check the slurm variant
-    def startClusterJob(self, command, logFile):
+    def startClusterJob(self, command):
+        '''
+        Starts a job on the cluster.
+
+        Args:
+            command (str): The command to be executed on the cluster.
+
+        Returns:
+            None
+        '''
 
         if (self.clusterType == "LSF"):
             command = f"bsub {command}"
@@ -60,7 +108,19 @@ class ClusterManager():
     # this should take the pid returned by the run command (or a dir to monitor, or something)
     # should know when the job is done running, using some sensor, so we know to trigger the copy back task
     def monitorClusterJob(self, jobId):
-        return BashOperator(
-            task_id='task4',
-            bash_command='echo Im running task 4, the current execution date is {{ds}} and the previous execution date is {{prev_ds}}'
+        '''
+        Monitors a job on the cluster to see if it has completed. 
+
+        Args:
+            jobId (str): The job id to monitor.
+
+        Returns:
+            None
+        '''
+
+        return ClusterJobSensor(
+            task_id='monitorClusterJob',
+            jobId=jobId,
+            sshTarget=f"{self.clusterLogin}@{self.headNode}",
+            clusterType=self.clusterType
         )

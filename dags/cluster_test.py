@@ -1,5 +1,6 @@
 import json
 import pendulum
+import os
 
 from airflow import DAG
 from mbio_utils.cluster_manager import ClusterManager
@@ -21,12 +22,9 @@ with DAG(
         "{{params.clusterLogin}}"
     )
 
-    # make a dummy file to test with
-    open('test.txt', 'a').close()
+    copyTestFileToCluster = cluster_manager.copyToCluster('/data/MicrobiomeDB/common/amplicon_sequencing/test_study/', 'samplesheet.csv', '.', gzip=False)
 
-    copyTestFileToCluster = cluster_manager.copyToCluster('.', 'test.txt', 'copy_test.txt', gzip=False)
-
-    copyTestFileFromCluster = cluster_manager.copyFromCluster('copy_test.txt', 'copy_test.txt', '.')
+    copyTestFileFromCluster = cluster_manager.copyFromCluster('.', 'samplesheet.csv', '/data/MicrobiomeDB/common/amplicon_sequencing/test_study/')
 
     # TODO if this works then add a cluster job to add a line to the copy_test.txt file
     # TODO if that also works, make the task to add a line wait for a min first, to test monitoring the job

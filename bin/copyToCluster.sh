@@ -9,8 +9,12 @@ sshTarget=$5
 set -eo pipefail
 
 # optionally gzip
-gzipCmd=$(( $gzip = true ? "gzip -c |" : "" ))
-gunzipCmd=$(( $gzip = true ? "gunzip -c |" : "" ))
+gzipCmd=""
+gunzipCmd=""
+if [[ $gzip = true ]]; then
+  gzipCmd="gzip -c |"
+  gunzipCmd="gunzip -c |"
+fi
 
 sumFile="$fromFile.sum"
 

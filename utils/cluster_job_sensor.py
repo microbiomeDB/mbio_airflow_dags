@@ -39,7 +39,7 @@ class ClusterJobSensor(BaseSensorOperator):
 
         jobInfo = subprocess.run(cmd, shell=True)
 
-        # TODO this likely is correct yet. its a placeholder
+        # TODO this likely isnt correct yet. its a placeholder
         # if the job is still running, return False
         if (jobInfo.returncode == 0):
             return False

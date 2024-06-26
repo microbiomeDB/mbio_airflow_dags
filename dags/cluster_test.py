@@ -14,9 +14,9 @@ with DAG(
         on_failure_callback=cleanup,
         on_success_callback=cleanup
 ) as dag:
-    # TODO make this configurable by user somehow?
+    # TODO make this configurable by user somehow? and not hard coded..
     # ideally a user would just use the clusterName 'pmacs' and wed find the right config
-    cluster_config = json.load(open('cluster_configs/pmacs.json'))   
+    cluster_config = json.load(open('/data/MicrobiomeDB/mbio-airflow-dags/cluster_configs/pmacs.json'))   
     cluster_manager = ClusterManager(
         cluster_config['headNode'], 
         cluster_config['fileTransferNode'], 

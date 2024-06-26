@@ -2,7 +2,7 @@ import json
 import pendulum
 
 from airflow import DAG
-from mbio_airflow_dags.utils.ClusterManager import ClusterManager
+from mbio_utils.cluster_manager import ClusterManager
 
 with DAG(
         dag_id = "cluster_test",
@@ -13,7 +13,7 @@ with DAG(
 ) as dag:
     # TODO make this configurable by user somehow? and not hard coded..
     # ideally a user would just use the clusterName 'pmacs' and wed find the right config
-    cluster_config = json.load(open('/data/MicrobiomeDB/mbio-airflow-dags/cluster_configs/pmacs.json'))
+    cluster_config = json.load(open('/data/MicrobiomeDB/mbio_airflow_dags/cluster_configs/pmacs.json'))
     cluster_manager = ClusterManager(
         cluster_config['headNode'], 
         cluster_config['fileTransferNode'], 

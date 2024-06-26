@@ -1,5 +1,5 @@
 from airflow.operators.bash_operator import BashOperator
-from mbio_airflow_dags.utils.cluster_job_sensor import ClusterJobSensor
+from mbio_utils.cluster_job_sensor import ClusterJobSensor
 
 # TODO consider implementation multiple constructors somehow, to accept a config file and login
 # or maybe that should be the default constructor here, and grow into manual config
@@ -42,7 +42,7 @@ class ClusterManager():
         # TODO validate inputs, all should be strings except gzip which should be boolean
 
         # TODO shouldnt be hardcoded path
-        cmd = f"/data/MicrobiomeDB/mbio-airflow-dags/bin/copyToCluster.sh {fromDir} {fromFile} {toDir} {gzip} {self.clusterLogin}@{self.fileTransferNode}"
+        cmd = f"/data/MicrobiomeDB/mbio_airflow_dags/bin/copyToCluster.sh {fromDir} {fromFile} {toDir} {gzip} {self.clusterLogin}@{self.fileTransferNode}"
 
         return BashOperator(
             task_id='copyToCluster',
@@ -66,7 +66,7 @@ class ClusterManager():
         # TODO validate inputs
 
         # TODO shouldnt be hardcoded path
-        cmd = f"/data/MicrobiomeDB/mbio-airflow-dags/bin/copyFromCluster.sh {fromDir} {fromFile} {toDir} {gzip} {deleteAfterCopy} {self.clusterLogin}@{self.fileTransferNode}"
+        cmd = f"/data/MicrobiomeDB/mbio_airflow_dags/bin/copyFromCluster.sh {fromDir} {fromFile} {toDir} {gzip} {deleteAfterCopy} {self.clusterLogin}@{self.fileTransferNode}"
 
         return BashOperator(
             task_id='copyFromCluster',

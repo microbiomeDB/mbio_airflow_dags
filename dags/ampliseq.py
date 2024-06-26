@@ -14,7 +14,6 @@ with DAG(
     schedule=None,
     start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
     catchup=False,
-    dagrun_timeout=datetime.timedelta(minutes=60),
 ) as dag:
     @task
     def process_ampliseq_studies():
@@ -32,7 +31,6 @@ with DAG(
         # and thats easier for most people if its in a csv
         provenance_path = f"{base_path}/processed_studies_provenance.csv"
         with open(provenance_path, 'r') as file:
-            next(file)
             # Create a CSV DictReader
             reader = csv.DictReader(file)
     
@@ -52,7 +50,7 @@ with DAG(
                 current_timestamp = os.path.getmtime(path)
                 processStudy = False
                 if (study in processed_studies):
-                    if ((current_timestamp > int(processed_studies[study]['timestamp'])) or
+                    if ((current_timestamp > float(processed_studies[study]['timestamp'])) or
                         (ampliseq_version != processed_studies[study]['code_revision'])):
                         processStudy = True
                 else:
@@ -78,16 +76,19 @@ with DAG(
             study_samplesheet_path = f"{study_in_path}/samplesheet.csv" # TODO validate exists
             study_params_path = f"{study_in_path}/nf-params.json" # TODO validate exists
             study_out_path = f"{study_in_path}/out"
+            study_work_dir = f"{study_in_path}/work"
 
             nextflow_command = (f"nextflow run nf-core/ampliseq -with-trace "
                                 f"-r {ampliseq_version} "
                                 f"-c {config_path} "
                                 f"-params-file {study_params_path} "
+                                f"-work-dir {study_work_dir} "
                                 f"--input {study_samplesheet_path} "
                                 f"--outdir {study_out_path} "
                                 f"-profile docker")
             
-            R_command = (f"Rscript ../bin/ampliseq_postProcessing.R {study} {study_out_path}")
+            # TODO dont want a hardcoded path here
+            R_command = (f"Rscript /data/MicrobiomeDB/mbio-airflow-dags/bin/ampliseq_postProcessing.R {study} {study_out_path}")
 
             command = (nextflow_command + "; " + R_command)
 

@@ -1,4 +1,4 @@
-#!/bin/
+#!/bin/bash
 
 fromDir=$1
 fromFile=$2
@@ -19,16 +19,18 @@ fi
 
 sumFile="$fromFile.sum"
 
+cd $toDir
+
 # copy and checksum
-# TODO use scp or something?
-remoteCmd="/bin/bash -c \"set -eo pipefail; cd $fromDir; tar cf - $fromFile | $gzip tee >(md5sum > $sumFile)\""
-localCmd="tee >(md5sum > $sumFile) | $gunzip tar xf -"
-ssh -2 $sshTarget "$remoteCmd" | $localCmd
+remoteCmd="/bin/bash -c 'set -eo pipefail; cd $fromDir; tar cf - $fromFile | $gzipCmd tee >(md5sum > $sumFile)'"
+localCmd="tee >(md5sum > $sumFile) | $gunzipCmd tar xf -"
+echo "TESTING!!!! cmd: ssh -2 $sshTarget \"$remoteCmd\" | $localCmd"
+/bin/bash -c "ssh -2 $sshTarget \"$remoteCmd\" | $localCmd"
 
 checksumOnCluster=$(ssh -2 $sshTarget "cd $fromDir; cat $sumFile")
 checksumLocal=$(cat $sumFile)
 
-if [ "$checksumOnCluster" != "$checksumLocal" ]; then
+if [[ "$checksumOnCluster" != "$checksumLocal" ]]; then
     echo "Checksums do not match. Copy from cluster failed."
     exit 1
 fi
@@ -37,11 +39,11 @@ fi
 rm $sumFile
 ssh -2 $sshTarget "cd $fromDir; rm -f $sumFile"
 
-if ($deleteAfter) {
-    ssh -2 $ssh_target "cd $fromDir; rm -rf $fromFile"
-}
+if [[ $deleteAfter = true ]]; then
+    ssh -2 $sshTarget "cd $fromDir; rm -rf $fromFile"
+fi
 
-if ( ! -f $toDir/$fromFile) {
+if [[ ! -f $toDir/$fromFile ]]; then
     echo "File did not successfully copy to $toDir/$fromFile"
     exit 1
-}
+fi

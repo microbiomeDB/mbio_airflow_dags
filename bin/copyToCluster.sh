@@ -31,7 +31,7 @@ localCmd="tar cfh - $fromFile | $gzipCmd tee >(md5sum > $sumFile)"
 remoteCmd="/bin/bash -c \"set -eo pipefail; cd $toDir; tee >(md5sum > $sumFile) | $gunzipCmd tar xf -\""
 
 echo "TESTING!!!  cmd: $localCmd | ssh -2 $sshTarget '$remoteCmd'"
-$localCmd | ssh -2 $sshTarget '$remoteCmd'
+/bin/bash -c "$localCmd | ssh -2 $sshTarget '$remoteCmd'"
 
 checksumOnCluster=$(ssh -2 $sshTarget "cd $toDir; cat $sumFile")
 checksumLocal=$(cat $sumFile)

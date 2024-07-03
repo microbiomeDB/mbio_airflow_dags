@@ -1,5 +1,6 @@
 from airflow.operators.bash_operator import BashOperator
 from mbio_utils.cluster_job_sensor import ClusterJobSensor
+from airflow.models.taskinstance import TaskInstance
 
 # TODO consider implementation multiple constructors somehow, to accept a config file and login
 # or maybe that should be the default constructor here, and grow into manual config
@@ -76,7 +77,8 @@ class ClusterManager():
     # TODO double check the slurm variant
     def startClusterJob(self, command):
         '''
-        Starts a job on the cluster.
+        Starts a job on the cluster. Pushes the resulting jobId
+        to Airflow Xcom.
 
         Args:
             command (str): The command to be executed on the cluster.
@@ -86,9 +88,9 @@ class ClusterManager():
         '''
 
         if (self.clusterType == "LSF"):
-            command = f"bsub {command}"
+            command = f"bsub \\\"{command}\\\""
         elif (self.clusterType == "SLURM"):
-            command = f"sbatch {command}"
+            command = f"sbatch \\\"{command}\\\""
         else:
             raise Exception(f"Cluster type {self.clusterType} not supported")
 
@@ -107,20 +109,21 @@ class ClusterManager():
 
     # this should take the pid returned by the run command (or a dir to monitor, or something)
     # should know when the job is done running, using some sensor, so we know to trigger the copy back task
-    def monitorClusterJob(self, jobId):
+    def monitorClusterJob(self, jobId, **kwargs):
         '''
         Monitors a job on the cluster to see if it has completed. 
 
         Args:
-            jobId (str): The job id to monitor.
+            jobId (str): pid of job to monitor on cluster (supports templated fields).
 
         Returns:
             None
         '''
 
         return ClusterJobSensor(
-            task_id='monitorClusterJob',
+            task_id="monitorClusterJob",
             jobId=jobId,
             sshTarget=f"{self.clusterLogin}@{self.headNode}",
-            clusterType=self.clusterType
+            clusterType=self.clusterType,
+            **kwargs
         )

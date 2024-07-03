@@ -10,7 +10,7 @@ with DAG(
         schedule=None,
         start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
         catchup=False,
-        params={'clusterLogin': 'dcallan'}
+        params={'clusterLogin': 'dcallan'},
 ) as dag:
     # TODO make this configurable by user somehow? and not hard coded..
     # ideally a user would just use the clusterName 'pmacs' and wed find the right config
@@ -22,11 +22,13 @@ with DAG(
         "{{params.clusterLogin}}"
     )
 
-    copyTestFileToCluster = cluster_manager.copyToCluster('/data/MicrobiomeDB/common/amplicon_sequencing/test_study/', 'samplesheet.csv', '.', gzip=False)
+    copyTestFileToCluster = cluster_manager.copyToCluster('/data/MicrobiomeDB/common/amplicon_sequencing/test_study/', 'copyToClusterTestFile.txt', '.', gzip=False)
 
-    copyTestFileFromCluster = cluster_manager.copyFromCluster('.', 'samplesheet.csv', '/data/MicrobiomeDB/common/amplicon_sequencing/test_study/')
+    modifyTestFileOnCluster = cluster_manager.startClusterJob("sleep 30s; echo \"foobar\" > copyToClusterTestFile.txt")
 
-    # TODO if this works then add a cluster job to add a line to the copy_test.txt file
-    # TODO if that also works, make the task to add a line wait for a min first, to test monitoring the job
+    monitorTestJobOnCluster = cluster_manager.monitorClusterJob(modifyTestFileOnCluster.output, poke_interval=5)
 
-    copyTestFileToCluster >> copyTestFileFromCluster
+    copyTestFileFromCluster = cluster_manager.copyFromCluster('.', 'copyToClusterTestFile.txt', '/data/MicrobiomeDB/common/amplicon_sequencing/test_study/')
+
+    # the relationships of these tasks needs set explicitly
+    copyTestFileToCluster >> modifyTestFileOnCluster >> monitorTestJobOnCluster >> copyTestFileFromCluster

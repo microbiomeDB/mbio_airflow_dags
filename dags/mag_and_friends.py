@@ -5,6 +5,7 @@ import json
 
 from airflow.models.dag import DAG
 from airflow.decorators import task
+from airflow.decorators import task_group
 from airflow.operators.bash import BashOperator
 from mbio_utils.cluster_manager import ClusterManager
 
@@ -89,7 +90,7 @@ with DAG(
         return studyInfo
 
 
-    # here studyInfo should be something like a dict of study name and directory, w a key of 'study' and 'path'
+    # here the task group will run once for each study returned by process studies function
     @task_group(group_id="run_mag_and_friends_on_cluster")
     def mag_and_friends(studyName, studyPath):
         @task
@@ -189,7 +190,7 @@ with DAG(
 
     copy_config_to_cluster() >> \
         watch_copy_config() >> \
-        mag_and_friends.expand(studyInfo=process_shotgun_metagenomic_studies())
+        mag_and_friends.expand_kwargs(process_shotgun_metagenomic_studies())
 
 if __name__ == "__main__":
     dag.test()

@@ -171,9 +171,7 @@ def create_dag():
                             elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
                                 raise Exception(f"No samplesheet.csv or accessions.txt found for {studyName} in {studyPath}")
 
-                            # TODO figure out the reference dbs
-                            # maybe like copying config, a step before all this to download manually
-                            # should probably check if its already there, from a prev run too
+                            # TODO maybe make a constant for ref db names?
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
                                 f"--input {studyName}/data/samplesheet.txt " +
                                 f"--outdir {studyName}/out " +
@@ -229,7 +227,6 @@ def create_dag():
                                             writer.writerow([studyName, current_timestamp, MAG_VERSION])
 
                             if os.path.exists(accessionsFile):
-                                copy_config_to_cluster >> \
                                 copy_study_to_cluster >> \
                                 run_fetchngs >> \
                                 watch_fetchngs >> \
@@ -241,7 +238,6 @@ def create_dag():
                                 post_process_results() >> \
                                 update_provenance()
                             else:
-                                copy_config_to_cluster >> \
                                 copy_study_to_cluster >> \
                                 run_mag >> \
                                 watch_mag >> \
@@ -251,6 +247,7 @@ def create_dag():
 
                             get_genomad_db >> current_tasks
                             get_kraken_db >> current_tasks
+                            copy_config_to_cluster >> current_tasks
 
         else:
             raise FileNotFoundError(f"Studies file not found: {ALL_STUDIES_PATH}")

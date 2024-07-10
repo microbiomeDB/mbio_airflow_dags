@@ -27,7 +27,7 @@ class ClusterManager():
         self.clusterType = clusterType # from config
         self.clusterLogin = clusterLogin # user param
 
-    def copyToCluster(self, fromDir, fromFile, toDir, gzip=False):
+    def copyToCluster(self, fromDir, fromFile, toDir, gzip=False, **kwargs):
         """
         Copies a file to the cluster. The file will be gzipped if gzip is set to True.
 
@@ -47,10 +47,11 @@ class ClusterManager():
 
         return BashOperator(
             task_id='copyToCluster',
-            bash_command=cmd
+            bash_command=cmd,
+            **kwargs
         )
 
-    def copyFromCluster(self, fromDir, fromFile, toDir, deleteAfterCopy=False, gzip=False):
+    def copyFromCluster(self, fromDir, fromFile, toDir, deleteAfterCopy=False, gzip=False, **kwargs):
         """
         Copies a file from the cluster. The file will be gzipped if gzip is set to True.
 
@@ -71,11 +72,12 @@ class ClusterManager():
 
         return BashOperator(
             task_id='copyFromCluster',
-            bash_command=cmd
+            bash_command=cmd,
+            **kwargs
         )
 
     # TODO double check the slurm variant
-    def startClusterJob(self, command):
+    def startClusterJob(self, command, **kwargs):
         '''
         Starts a job on the cluster. Pushes the resulting jobId
         to Airflow Xcom.
@@ -104,7 +106,8 @@ class ClusterManager():
 
         return BashOperator(
             task_id='startClusterJob',
-            bash_command=cmd
+            bash_command=cmd,
+            **kwargs
         )
 
     # this should take the pid returned by the run command (or a dir to monitor, or something)

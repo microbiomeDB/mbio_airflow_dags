@@ -145,7 +145,7 @@ def create_dag():
 
                             accessionsFile = os.path.join(studyPath, "accessions.txt")
                             if os.path.exists(accessionsFile):
-                                cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {accessionsFile} --outdir {studyName}/data"
+                                cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {tailStudyPath}/accessions.txt --outdir {tailStudyPath}/data"
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -157,7 +157,7 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                draft_samplesheet = os.path.join(studyName, "data/samplesheet/samplesheet.csv")
+                                draft_samplesheet = os.path.join(tailStudyPath, "data/samplesheet/samplesheet.csv")
                                 cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" \
                                         " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'"
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
@@ -173,8 +173,8 @@ def create_dag():
 
                             # TODO maybe make a constant for ref db names?
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
-                                f"--input {studyName}/data/samplesheet.txt " +
-                                f"--outdir {studyName}/out " +
+                                f"--input {tailStudyPath}/data/samplesheet.txt " +
+                                f"--outdir {tailStudyPath}/out " +
                                 "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                 "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
                                 "--genomad_db \"genomad_db\"")
@@ -190,7 +190,7 @@ def create_dag():
 
                             copy_results_from_cluster = cluster_manager.copyFromCluster(
                                 '.', 
-                                f"{studyName}/out", 
+                                f"{tailStudyPath}/out", 
                                 os.path.join(studyPath, 'out'), 
                                 gzip=False,
                                 task_id = "copy_results_from_cluster",

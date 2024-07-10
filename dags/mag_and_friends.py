@@ -23,6 +23,8 @@ import json
 ##          to allow for fetchngs to be optional. This commit may serve as a reference:
 ##          https://github.com/microbiomeDB/mbio_airflow_dags/commit/31add62b871706bef8e8deaceaa0e051778e1128
 ##
+##          It should also be noted that this DAG assumes nextflow and conda are installed on the cluster.
+##
 ## !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 
 
@@ -97,6 +99,18 @@ def create_dag():
             gzip=False, 
             task_id = "copy_config_to_cluster"
         )        
+
+        get_kraken_db = cluster_manager.startClusterJob(
+            "if [[ ! -f k2_pluspf_20240112.tar.gz ]]; then wget https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_20240112.tar.gz; fi;",
+            task_id = "get_kraken_db",
+            do_xcom_push = False
+        )
+
+        get_genomad_db = cluster_manager.startClusterJob(
+            "if [[ ! -d genomad_db ]]; then conda create -n genomad -c conda-forge -c bioconda genomad; conda activate genomad; genomad download-database .; conda deactivate; fi;",
+            task_id = "get_genomad_db",
+            do_xcom_push = False
+        )
 
         processed_studies = load_processed_studies()
 
@@ -234,6 +248,9 @@ def create_dag():
                                 copy_results_from_cluster >> \
                                 post_process_results() >> \
                                 update_provenance()
+
+                            get_genomad_db >> current_tasks
+                            get_kraken_db >> current_tasks
 
         else:
             raise FileNotFoundError(f"Studies file not found: {ALL_STUDIES_PATH}")

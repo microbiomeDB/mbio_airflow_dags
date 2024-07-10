@@ -2,6 +2,7 @@ import pendulum
 import csv
 import os
 import json
+import sys
 
 from airflow.models.dag import DAG
 from airflow.decorators import task
@@ -36,22 +37,16 @@ with DAG(
     # say we had both running over the same studies...
     mag_version = "3.0.1"
     # TODO make this a user param
-    base_path = "/data/MicrobiomeDB/common/shotgun_metagenomics/"
+    base_path = "/data/MicrobiomeDB/common/shotgun_metagenomics"
 
     # first see whats been run before and under what conditions
     # TODO refactor this since other dags will use it too
     # maybe as a Python class called ProcessStudies
-    provenance_path = f"{base_path}/processed_studies_provenance.csv"
+    provenance_path = os.path.join(base_path, "processed_studies_provenance.csv")
 
-    @task
-    def copy_config_to_cluster():
-        # this should send the whole directory to the cluster. 
-        # is that what we want? or just specific files in the directory?
-        return(cluster_manager.copyToCluster(base_path, 'mag.config', '.', gzip=False))
-    
-    @task
-    def watch_copy_config():
-        return(cluster_manager.watchClusterJob(copy_config_to_cluster.output, poke_interval=5))
+    # this should send the whole directory to the cluster. 
+    # is that what we want? or just specific files in the directory?
+    copy_config_to_cluster = cluster_manager.copyToCluster(base_path, 'mag.config', '.', gzip=False)
 
     # this should read the studies.csv file, and compare the timestamp of the study to the one in the provenance file
     # it should make a dict of study name and path ready to run on the cluster
@@ -70,7 +65,7 @@ with DAG(
         # get study and path from csv
         # studyInfo should be a list of dicts of study name and path
         studyInfo = []
-        all_studies_path = f"{base_path}/metagenomics_studies.csv"
+        all_studies_path = os.path.join(base_path, "metagenomics_studies.csv")
         with open(all_studies_path, "r") as file:
             next(file)
             for line in file:
@@ -89,71 +84,51 @@ with DAG(
 
         return studyInfo
 
-
     # here the task group will run once for each study returned by process studies function
     @task_group(group_id="run_mag_and_friends_on_cluster")
     def mag_and_friends(studyName, studyPath):
-        @task
-        def copy_study_to_cluster():
-            # this should send the whole directory to the cluster. 
-            # is that what we want? or just specific files in the directory?
-            return(cluster_manager.copyToCluster('.', studyPath, '.', gzip=False))
 
-        @task
-        def run_fetchngs():
-            accessionsFile = f"{studyPath}/accessions.txt"
-            cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {accessionsFile} --outdir {studyName}/data"
-            return(cluster_manager.startClusterJob(cmd))
+        #TODO need to split studyPath, or make copyToCluster smarter
+        # right now it tries to move to '.' and then copy an absolute path and it errs
+        copy_study_to_cluster = cluster_manager.copyToCluster('.', studyPath, '.', gzip=False)
 
-        @task
-        def watch_fetchngs():
-            # 900 seconds is 15 minutes, considered making it 5 min instead and still might
-            return(cluster_manager.watchClusterJob(run_fetchngs.output, mode='reschedule', poke_interval=900))
+        #accessionsFile = f"{studyPath}/accessions.txt"
+        #cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {accessionsFile} --outdir {studyName}/data"
+        #run_fetchngs = cluster_manager.startClusterJob(cmd)
 
-        @task
-        def make_mag_samplesheet():
-            # TODO confirm location of draft samplesheet provided by fetchngs
-            # TODO figure out what awk command to actually use for this
-            # everything here is a placeholder currently
-            draft_samplesheet = f"{studyName}/data/samplesheet.csv"
-            cmd = f"cp {draft_samplesheet} {studyName}/data/samplesheet.txt"
-            return(cluster_manager.startClusterJob(cmd))
+        # 900 seconds is 15 minutes, considered making it 5 min instead and still might
+        #watch_fetchngs = cluster_manager.monitorClusterJob(run_fetchngs.output, mode='reschedule', poke_interval=900)
 
-        @task
-        def watch_make_mag_samplesheet():
-            return(cluster_manager.watchClusterJob(make_mag_samplesheet.output, poke_interval=5))
+        # TODO confirm location of draft samplesheet provided by fetchngs
+        # TODO figure out what awk command to actually use for this
+        # everything here is a placeholder currently
+        #draft_samplesheet = f"{studyName}/data/samplesheet.csv"
+        #cmd = f"cp {draft_samplesheet} {studyName}/data/samplesheet.txt"
+        #make_mag_samplesheet = cluster_manager.startClusterJob(cmd)
 
-        @task
-        def run_mag():
-            # TODO figure out the reference dbs
-            # maybe like copying config, a step before all this to download manually
-            # should probably check if its already there, from a prev run too
-            cmd = ("nextflow run nf-core/mag -c mag.config " +
-                    f"--input {studyName}/data/samplesheet.txt " +
-                    f"--outdir {studyName}/out " +
-                    "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
-                    "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
-                    "--genomad_db \"genomad_db\"")
-            
-            return(cluster_manager.startClusterJob(cmd))
+        #watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(make_mag_samplesheet.output, poke_interval=5)
 
-        @task
-        def watch_mag():
-            return(cluster_manager.watchClusterJob(run_mag.output, mode='reschedule', poke_interval=1800))
+        # TODO figure out the reference dbs
+        # maybe like copying config, a step before all this to download manually
+        # should probably check if its already there, from a prev run too
+        cmd = ("nextflow run nf-core/mag -c mag.config " +
+              f"--input {studyName}/data/samplesheet.txt " +
+              f"--outdir {studyName}/out " +
+               "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
+               "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
+               "--genomad_db \"genomad_db\"")
+        run_mag = cluster_manager.startClusterJob(cmd)
 
-        @task
-        def copy_results_from_cluster():
-            return(cluster_manager.copyFromCluster('.', f"{studyName}/out", studyPath, gzip=False))
+        watch_mag = cluster_manager.monitorClusterJob(run_mag.output, mode='reschedule', poke_interval=1800)
+
+        copy_results_from_cluster = cluster_manager.copyFromCluster('.', f"{studyName}/out", studyPath, gzip=False)
 
         # this should make rda files for the r package via a dedicated Rscript
         @task
         def post_process_results():
             # TODO make sure the out path is correct
             cmd = f"Rscript /data/MicrobiomeDB/mbio_airflow_dags/bin/mag_postProcessing.R {studyName} {studyPath}/out"
-            return(BashOperator(
-                task_id='post_process_results',
-                bash_command=cmd
-            ))
+            return(cmd)
 
         # this should either update or add a row to the study provenance file
         @task
@@ -177,19 +152,14 @@ with DAG(
                 else:
                     writer.writerow([studyName, current_timestamp, mag_version])
 
-        copy_study_to_cluster() >> \
-            run_fetchngs() >> \
-            watch_fetchngs() >> \
-            make_mag_samplesheet() >> \
-            watch_make_mag_samplesheet() >> \
-            run_mag() >> \
-            watch_mag() >> \
-            copy_results_from_cluster() >> \
+        copy_study_to_cluster >> \
+            run_mag >> \
+            watch_mag >> \
+            copy_results_from_cluster >> \
             post_process_results() >> \
             update_provenance()
 
-    copy_config_to_cluster() >> \
-        watch_copy_config() >> \
+    copy_config_to_cluster >> \
         mag_and_friends.expand_kwargs(process_shotgun_metagenomic_studies())
 
 if __name__ == "__main__":

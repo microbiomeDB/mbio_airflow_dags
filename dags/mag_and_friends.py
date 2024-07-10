@@ -76,7 +76,13 @@ def create_dag():
         # this should send the whole directory to the cluster. 
         # is that what we want? or just specific files in the directory?
         # TODO do we still want to do this if there are no studies to process?
-        copy_config_to_cluster = cluster_manager.copyToCluster(BASE_PATH, 'mag.config', '.', gzip=False)        
+        copy_config_to_cluster = cluster_manager.copyToCluster(
+            BASE_PATH, 
+            'mag.config', 
+            '.', 
+            gzip=False, 
+            task_id = "copy_config_to_cluster"
+        )        
 
         processed_studies = load_processed_studies()
 
@@ -105,19 +111,21 @@ def create_dag():
                                 tailStudyPath, 
                                 '.', 
                                 gzip=False,
+                                task_id = "copy_study_to_cluster",
                                 task_group=current_tasks
                             )
 
                             accessionsFile = os.path.join(studyPath, "accessions.txt")
                             if os.path.exists(accessionsFile):
                                 cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {accessionsFile} --outdir {studyName}/data"
-                                run_fetchngs = cluster_manager.startClusterJob(cmd, task_group=current_tasks)
+                                run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
                                 watch_fetchngs = cluster_manager.monitorClusterJob(
                                     run_fetchngs.output, 
                                     mode='reschedule', 
                                     poke_interval=900,
+                                    task_id="watch_fetchngs",
                                     task_group=current_tasks
                                 )
 
@@ -126,11 +134,12 @@ def create_dag():
                                 # everything here is a placeholder currently
                                 draft_samplesheet = os.path.join(studyName, "data/samplesheet.csv")
                                 cmd = f"cp {draft_samplesheet} {studyName}/data/samplesheet.txt"
-                                make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_group=current_tasks)
+                                make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
                                 watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
                                     make_mag_samplesheet.output, 
                                     poke_interval=5,
+                                    task_id="watch_make_mag_samplesheet",
                                     task_group=current_tasks
                                 )
                             elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
@@ -145,12 +154,13 @@ def create_dag():
                                 "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                 "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
                                 "--genomad_db \"genomad_db\"")
-                            run_mag = cluster_manager.startClusterJob(cmd, task_group=current_tasks)
+                            run_mag = cluster_manager.startClusterJob(cmd, task_id="run_mag", task_group=current_tasks)
 
                             watch_mag = cluster_manager.monitorClusterJob(
                                 run_mag.output, 
                                 mode='reschedule', 
                                 poke_interval=1800, 
+                                task_id="watch_mag",
                                 task_group=current_tasks
                             )
 
@@ -159,6 +169,7 @@ def create_dag():
                                 f"{studyName}/out", 
                                 os.path.join(studyPath, 'out'), 
                                 gzip=False,
+                                task_id = "copy_results_from_cluster",
                                 task_group=current_tasks
                             )
 

@@ -27,7 +27,7 @@ class ClusterManager():
         self.clusterType = clusterType # from config
         self.clusterLogin = clusterLogin # user param
 
-    def copyToCluster(self, fromDir, fromFile, toDir, gzip=False, **kwargs):
+    def copyToCluster(self, fromDir, fromFile, toDir, gzip=False, task_id = 'copyToCluster', **kwargs):
         """
         Copies a file to the cluster. The file will be gzipped if gzip is set to True.
 
@@ -46,12 +46,12 @@ class ClusterManager():
         cmd = f"/data/MicrobiomeDB/mbio_airflow_dags/bin/copyToCluster.sh {fromDir} {fromFile} {toDir} {gzip} {self.clusterLogin}@{self.fileTransferNode}"
 
         return BashOperator(
-            task_id='copyToCluster',
+            task_id=task_id,
             bash_command=cmd,
             **kwargs
         )
 
-    def copyFromCluster(self, fromDir, fromFile, toDir, deleteAfterCopy=False, gzip=False, **kwargs):
+    def copyFromCluster(self, fromDir, fromFile, toDir, deleteAfterCopy=False, gzip=False, task_id = 'copyFromCluster', **kwargs):
         """
         Copies a file from the cluster. The file will be gzipped if gzip is set to True.
 
@@ -71,13 +71,13 @@ class ClusterManager():
         cmd = f"/data/MicrobiomeDB/mbio_airflow_dags/bin/copyFromCluster.sh {fromDir} {fromFile} {toDir} {gzip} {deleteAfterCopy} {self.clusterLogin}@{self.fileTransferNode}"
 
         return BashOperator(
-            task_id='copyFromCluster',
+            task_id=task_id,
             bash_command=cmd,
             **kwargs
         )
 
     # TODO double check the slurm variant
-    def startClusterJob(self, command, **kwargs):
+    def startClusterJob(self, command, task_id = 'startClusterJob', **kwargs):
         '''
         Starts a job on the cluster. Pushes the resulting jobId
         to Airflow Xcom.
@@ -105,14 +105,14 @@ class ClusterManager():
             cmd += "| awk '{print $4}'"
 
         return BashOperator(
-            task_id='startClusterJob',
+            task_id=task_id,
             bash_command=cmd,
             **kwargs
         )
 
     # this should take the pid returned by the run command (or a dir to monitor, or something)
     # should know when the job is done running, using some sensor, so we know to trigger the copy back task
-    def monitorClusterJob(self, jobId, **kwargs):
+    def monitorClusterJob(self, jobId, task_id = 'monitorClusterJob', **kwargs):
         '''
         Monitors a job on the cluster to see if it has completed. 
 
@@ -124,7 +124,7 @@ class ClusterManager():
         '''
 
         return ClusterJobSensor(
-            task_id="monitorClusterJob",
+            task_id=task_id,
             jobId=jobId,
             sshTarget=f"{self.clusterLogin}@{self.headNode}",
             clusterType=self.clusterType,

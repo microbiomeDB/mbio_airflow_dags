@@ -11,6 +11,20 @@ import csv
 import os
 import json
 
+## !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+##
+##          IMPORTANT NOTE:
+##
+##          This dag is written as it is because of an Airflow bug: 
+##           https://github.com/apache/airflow/issues/39222
+##
+##          Once this issue is resolved, it should be re-written to use dynamic task mapping
+##          over a task group. The task group should have a BranchPythonOperator or similar
+##          to allow for fetchngs to be optional. This commit may serve as a reference:
+##          https://github.com/microbiomeDB/mbio_airflow_dags/commit/31add62b871706bef8e8deaceaa0e051778e1128
+##
+## !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
 
 # Constants for file paths
 # TODO should some/ all of these be configurable?

@@ -108,21 +108,33 @@ def create_dag():
                                 task_group=current_tasks
                             )
 
-                            #accessionsFile = f"{studyPath}/accessions.txt"
-                            #cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {accessionsFile} --outdir {studyName}/data"
-                            #run_fetchngs = cluster_manager.startClusterJob(cmd)
+                            accessionsFile = os.path.join(studyPath, "accessions.txt")
+                            if os.path.exists(accessionsFile):
+                                cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {accessionsFile} --outdir {studyName}/data"
+                                run_fetchngs = cluster_manager.startClusterJob(cmd, task_group=current_tasks)
 
-                            # 900 seconds is 15 minutes, considered making it 5 min instead and still might
-                            #watch_fetchngs = cluster_manager.monitorClusterJob(run_fetchngs.output, mode='reschedule', poke_interval=900)
+                                # 900 seconds is 15 minutes, considered making it 5 min instead and still might
+                                watch_fetchngs = cluster_manager.monitorClusterJob(
+                                    run_fetchngs.output, 
+                                    mode='reschedule', 
+                                    poke_interval=900,
+                                    task_group=current_tasks
+                                )
 
-                            # TODO confirm location of draft samplesheet provided by fetchngs
-                            # TODO figure out what awk command to actually use for this
-                            # everything here is a placeholder currently
-                            #draft_samplesheet = f"{studyName}/data/samplesheet.csv"
-                            #cmd = f"cp {draft_samplesheet} {studyName}/data/samplesheet.txt"
-                            #make_mag_samplesheet = cluster_manager.startClusterJob(cmd)
+                                # TODO confirm location of draft samplesheet provided by fetchngs
+                                # TODO figure out what awk command to actually use for this
+                                # everything here is a placeholder currently
+                                draft_samplesheet = os.path.join(studyName, "data/samplesheet.csv")
+                                cmd = f"cp {draft_samplesheet} {studyName}/data/samplesheet.txt"
+                                make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_group=current_tasks)
 
-                            #watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(make_mag_samplesheet.output, poke_interval=5)
+                                watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
+                                    make_mag_samplesheet.output, 
+                                    poke_interval=5,
+                                    task_group=current_tasks
+                                )
+                            elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
+                                raise Exception(f"No samplesheet.csv or accessions.txt found for {studyName} in {studyPath}")
 
                             # TODO figure out the reference dbs
                             # maybe like copying config, a step before all this to download manually
@@ -179,8 +191,21 @@ def create_dag():
                                         else:
                                             writer.writerow([studyName, current_timestamp, MAG_VERSION])
 
-                            copy_config_to_cluster >> \
-                            copy_study_to_cluster >> \
+                            if os.path.exists(accessionsFile):
+                                copy_config_to_cluster >> \
+                                copy_study_to_cluster >> \
+                                run_fetchngs >> \
+                                watch_fetchngs >> \
+                                make_mag_samplesheet >> \
+                                watch_make_mag_samplesheet >> \
+                                run_mag >> \
+                                watch_mag >> \
+                                copy_results_from_cluster >> \
+                                post_process_results() >> \
+                                update_provenance()
+                            else:
+                                copy_config_to_cluster >> \
+                                copy_study_to_cluster >> \
                                 run_mag >> \
                                 watch_mag >> \
                                 copy_results_from_cluster >> \

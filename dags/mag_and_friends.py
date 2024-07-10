@@ -143,16 +143,14 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                # TODO confirm location of draft samplesheet provided by fetchngs
-                                # TODO figure out what awk command to actually use for this
-                                # everything here is a placeholder currently
                                 draft_samplesheet = os.path.join(studyName, "data/samplesheet/samplesheet.csv")
-                                cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet} | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'"
+                                cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" \
+                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'"
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
                                 watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
                                     make_mag_samplesheet.output, 
-                                    poke_interval=5,
+                                    poke_interval=1,
                                     task_id="watch_make_mag_samplesheet",
                                     task_group=current_tasks
                                 )

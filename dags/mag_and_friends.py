@@ -18,7 +18,7 @@ CLUSTER_CONFIG_PATH = "/data/MicrobiomeDB/mbio_airflow_dags/cluster_configs/pmac
 BASE_PATH = "/data/MicrobiomeDB/common/shotgun_metagenomics"
 PROVENANCE_PATH = join(BASE_PATH, "processed_studies_provenance.csv")
 # metagenomic_studies.csv should have two columns, one w the study name and the other the directory
-ALL_STUDIES_PATH = join(BASE_PATH, "metagenomic_studies.csv")
+ALL_STUDIES_PATH = join(BASE_PATH, "metagenomics_studies.csv")
 MAG_CONFIG_PATH = join(BASE_PATH, "mag.config")
 MAG_VERSION = "3.0.1"
 

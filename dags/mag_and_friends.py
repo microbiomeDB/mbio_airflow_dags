@@ -37,6 +37,7 @@ PROVENANCE_PATH = join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = join(BASE_PATH, "metagenomics_studies.csv")
 MAG_CONFIG_PATH = join(BASE_PATH, "mag.config")
 MAG_VERSION = "3.0.1"
+FETCHNGS_VERSION = "1.12.0"
 
 
 # we should configure airflow to rerun this if the DAG changes too
@@ -156,7 +157,9 @@ def create_dag():
                                 cmd = (f"nextflow run nf-core/fetchngs " +
                                        f"--input {tailStudyPath}/accessions.tsv " +
                                        f"--outdir {tailStudyPath}/data " +
-                                        "-c fetchngs.config")
+                                       f"-r {FETCHNGS_VERSION}" +
+                                        "-c fetchngs.config" +
+                                        "--download_method aspera")
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -187,6 +190,7 @@ def create_dag():
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
                                 f"--input {tailStudyPath}/samplesheet.csv " +
                                 f"--outdir {tailStudyPath}/out " +
+                                f"-r {MAG_VERSION}" +
                                 "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                 "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
                                 "--genomad_db \"genomad_db\"")

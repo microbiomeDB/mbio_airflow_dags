@@ -143,9 +143,9 @@ def create_dag():
                                 task_group=current_tasks
                             )
 
-                            accessionsFile = os.path.join(studyPath, "accessions.txt")
+                            accessionsFile = os.path.join(studyPath, "accessions.tsv")
                             if os.path.exists(accessionsFile):
-                                cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {tailStudyPath}/accessions.txt --outdir {tailStudyPath}/data"
+                                cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {tailStudyPath}/accessions.tsv --outdir {tailStudyPath}/data"
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -169,7 +169,7 @@ def create_dag():
                                     task_group=current_tasks
                                 )
                             elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
-                                raise Exception(f"No samplesheet.csv or accessions.txt found for {studyName} in {studyPath}")
+                                raise Exception(f"No samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
 
                             # TODO maybe make a constant for ref db names?
                             cmd = ("nextflow run nf-core/mag -c mag.config " +

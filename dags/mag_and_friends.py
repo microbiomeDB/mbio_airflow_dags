@@ -92,13 +92,21 @@ def create_dag():
         # this should send the whole directory to the cluster. 
         # is that what we want? or just specific files in the directory?
         # TODO do we still want to do this if there are no studies to process?
-        copy_config_to_cluster = cluster_manager.copyToCluster(
+        copy_mag_config_to_cluster = cluster_manager.copyToCluster(
             BASE_PATH, 
             'mag.config', 
             '.', 
             gzip=False, 
-            task_id = "copy_config_to_cluster"
-        )        
+            task_id = "copy_mag_config_to_cluster"
+        )
+
+        copy_fetchngs_config_to_cluster = cluster_manager.copyToCluster(
+            '/data/MicrobiomeDB/common',
+            'fetchngs.config',
+            '.',
+            gzip=False,
+            task_id = "copy_fetchngs_config_to_cluster"
+        )
 
         get_kraken_db = cluster_manager.startClusterJob(
             "if [[ ! -f k2_pluspf_20240112.tar.gz ]]; then wget https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_20240112.tar.gz; fi;",
@@ -145,7 +153,10 @@ def create_dag():
 
                             accessionsFile = os.path.join(studyPath, "accessions.tsv")
                             if os.path.exists(accessionsFile):
-                                cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {tailStudyPath}/accessions.tsv --outdir {tailStudyPath}/data"
+                                cmd = (f"nextflow run nf-core/fetchngs " +
+                                       f"--input {tailStudyPath}/accessions.tsv " +
+                                       f"--outdir {tailStudyPath}/data " +
+                                        "-c fetchngs.config")
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -158,8 +169,9 @@ def create_dag():
                                 )
 
                                 draft_samplesheet = os.path.join(tailStudyPath, "data/samplesheet/samplesheet.csv")
-                                cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" \
-                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'"
+                                cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" +
+                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'" +
+                                        " > {tailStudyPath}/samplesheet.csv")
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
                                 watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
@@ -173,7 +185,7 @@ def create_dag():
 
                             # TODO maybe make a constant for ref db names?
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
-                                f"--input {tailStudyPath}/data/samplesheet.txt " +
+                                f"--input {tailStudyPath}/samplesheet.csv " +
                                 f"--outdir {tailStudyPath}/out " +
                                 "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                 "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
@@ -247,7 +259,8 @@ def create_dag():
 
                             get_genomad_db >> current_tasks
                             get_kraken_db >> current_tasks
-                            copy_config_to_cluster >> current_tasks
+                            copy_mag_config_to_cluster >> current_tasks
+                            copy_fetchngs_config_to_cluster >> current_tasks
 
         else:
             raise FileNotFoundError(f"Studies file not found: {ALL_STUDIES_PATH}")

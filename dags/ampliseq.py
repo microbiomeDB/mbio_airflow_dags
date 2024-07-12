@@ -9,6 +9,11 @@ import os
 import textwrap
 
 # Constants for file paths
+# Modify the base path and make sure all relevent files exist in path for the DAG to pull on
+# processed_studies_provenance.csv is used for logging samples processed by DAG already
+# ampliseq.config is used to feed seqera cloud monitoring token into nextflow
+# amplicon_studies.csv is used for pointing to studies and their path
+
 BASE_PATH = "/home/ruicatxiao/mbio_af_branch/local_testing_data_config"
 PROVENANCE_PATH = os.path.join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = os.path.join(BASE_PATH, "amplicon_studies.csv")

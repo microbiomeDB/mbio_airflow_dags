@@ -37,6 +37,7 @@ PROVENANCE_PATH = join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = join(BASE_PATH, "metagenomics_studies.csv")
 MAG_CONFIG_PATH = join(BASE_PATH, "mag.config")
 MAG_VERSION = "3.0.1"
+TAXPROFILER_VERSION = "1.1.8"
 
 
 # we should configure airflow to rerun this if the DAG changes too
@@ -100,6 +101,7 @@ def create_dag():
             task_id = "copy_config_to_cluster"
         )        
 
+        # TODO the references management should be a task group
         get_kraken_db = cluster_manager.startClusterJob(
             "if [[ ! -f k2_pluspf_20240112.tar.gz ]]; then wget https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_20240112.tar.gz; fi;",
             task_id = "get_kraken_db",
@@ -109,6 +111,33 @@ def create_dag():
         get_genomad_db = cluster_manager.startClusterJob(
             "if [[ ! -d genomad_db ]]; then conda create -n genomad -c conda-forge -c bioconda genomad; conda activate genomad; genomad download-database .; conda deactivate; fi;",
             task_id = "get_genomad_db",
+            do_xcom_push = False
+        )
+
+        # useful for host reads removal
+        # TODO not all studies are human studies
+        get_human_reference_genome = cluster_manager.startClusterJob(
+            "if [[ ! -f hg38.fa.gz ]]; then wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz; fi;",
+            task_id = "get_human_reference_genome",
+            do_xcom_push = False
+        )
+
+        get_metaphlan_db = cluster_manager.startClusterJob(
+            "if [[ ! -d metaphlan/metaphlan_databases ]]; then mkdir -p metaphlan/metaphlan_databases; wget http://cmprod1.cibio.unitn.it/biobakery4/metaphlan_databases/mpa_vJun23_CHOCOPhlAnSGB_202307.tar; tar -xvf mpa_vJun23_CHOCOPhlAnSGB_202307.tar -C metaphlan/metaphlan_databases; fi;",
+            task_id = "get_metaphlan_db",
+            do_xcom_push = False
+        )
+
+        get_mOTU_db = cluster_manager.startClusterJob(
+            "if [[ ! -f db_mOTU_v3.0.1.tar.gz ]]; then wget https://zenodo.org/records/5140350/files/db_mOTU_v3.0.1.tar.gz; fi;",
+            task_id = "get_mOTU_db",
+            do_xcom_push = False
+        )
+
+        # this for taxpasta
+        get_taxdump = cluster_manager.startClusterJob(
+            "if [[ ! -d taxdump ]]; then wget wget https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/new_taxdump/new_taxdump.tar.gz; tar -xvf new_taxdump.tar.gz -C taxdump; fi;",
+            task_id = "get_taxdump",
             do_xcom_push = False
         )
 
@@ -129,6 +158,7 @@ def create_dag():
                         with TaskGroup(f'{studyName}') as current_tasks:
 
                             # copy the study to the cluster
+                            # TODO should ignore previous work dir if it exists
                             splitStudyPath = os.path.split(studyPath)
                             if (splitStudyPath[1] == ''):
                                 splitStudyPath = splitStudyPath[0]
@@ -145,7 +175,7 @@ def create_dag():
 
                             accessionsFile = os.path.join(studyPath, "accessions.txt")
                             if os.path.exists(accessionsFile):
-                                cmd = f"nextflow run nf-core/fetchngs -profile singularity --input {accessionsFile} --outdir {studyName}/data"
+                                cmd = f"nextflow run nf-core/fetchngs -c fetchngs.config --input {accessionsFile} --outdir {studyName}/data"
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -158,6 +188,7 @@ def create_dag():
                                 )
 
                                 draft_samplesheet = os.path.join(studyName, "data/samplesheet/samplesheet.csv")
+
                                 cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" \
                                         " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'"
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
@@ -168,10 +199,42 @@ def create_dag():
                                     task_id="watch_make_mag_samplesheet",
                                     task_group=current_tasks
                                 )
+
+                                cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,ILLUMINA,$2,$3}}' {draft_samplesheet}" \
+                                        " | sed 1,1d | sed '1i sample,run_accession,instrument_platform,fastq_1,fastq_2' | sed 's/\"//g'"
+                                make_taxprofiler_samplesheet = cluster_manager.startClusterJob(
+                                    cmd, 
+                                    task_id="make_taxprofiler_samplesheet", 
+                                    task_group=current_tasks
+                                )
+
+                                watch_make_taxprofiler_samplesheet = cluster_manager.monitorClusterJob(
+                                    make_taxprofiler_samplesheet.output, 
+                                    poke_interval=1,
+                                    task_id="watch_make_taxprofiler_samplesheet",
+                                    task_group=current_tasks
+                                )
                             elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
                                 raise Exception(f"No samplesheet.csv or accessions.txt found for {studyName} in {studyPath}")
 
+                            cmd = ("nextflow run nf-core/taxprofiler -c taxprofiler.config " +
+                                    f"-r {TAXPROFILER_VERSION} " +
+                                    f"--work-dir {studyName}/taxprofiler_work " +
+                                    f"--params-file {studyName}/taxprofiler-params.json")
+                            run_taxprofiler = cluster_manager.startClusterJob(cmd, task_id="run_taxprofiler", task_group=current_tasks)
+
+                            watch_taxprofiler = cluster_manager.monitorClusterJob(
+                                run_taxprofiler.output, 
+                                mode='reschedule', 
+                                poke_interval=1800, 
+                                task_id="watch_taxprofiler",
+                                task_group=current_tasks
+                            )
+
                             # TODO maybe make a constant for ref db names?
+                            # TODO should clean up its work dir when its done
+                            # TODO update mag stuff to reflect accomodating for taxprofiler
+                            # ex: samplesheet.csv -> mag_samplesheet.csv, out -> mag_out, etc
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
                                 f"--input {studyName}/data/samplesheet.txt " +
                                 f"--outdir {studyName}/out " +

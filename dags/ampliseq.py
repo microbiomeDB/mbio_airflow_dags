@@ -1,103 +1,114 @@
+from airflow.models import DAG
+from airflow.operators.bash import BashOperator
+from airflow.operators.python_operator import PythonOperator
+from airflow.utils.task_group import TaskGroup
+from os.path import join
 import pendulum
 import csv
 import os
+import textwrap
 
-from airflow.models.dag import DAG
-from airflow.decorators import task
-from airflow.operators.bash import BashOperator
+# Constants for file paths
+BASE_PATH = "/home/ruicatxiao/mbio_af_branch/local_testing_data_config"
+PROVENANCE_PATH = join(BASE_PATH, "processed_studies_provenance.csv")
+ALL_STUDIES_PATH = join(BASE_PATH, "amplicon_studies.csv")
+CONFIG_PATH = join(BASE_PATH, "ampliseq.config")
 
-with DAG(
-    dag_id="automated_ampliseq",
-    schedule=None,
-    start_date=pendulum.datetime(2021, 1, 1, tz="UTC"),
-    catchup=False,
-) as dag:
-    @task
-    def process_ampliseq_studies():
-        # studies.csv should have two columns, one w the study name and the other the directory
-        # we need to make a bash operator for each study
-
-        # we should configure airflow to rerun this if the DAG changes too
-        ampliseq_version = "2.9.0"
-        # TODO what if we move or want to use it in a different context? a good way to configure this?
-        base_path = "/data/MicrobiomeDB/common/amplicon_sequencing/"
-
-        # first see whats been run before and under what conditions
-        # TODO its possible this info is better in a postgres table
-        # though its nice to be able to remove a row to force a rerun
-        # and thats easier for most people if its in a csv
-        provenance_path = f"{base_path}/processed_studies_provenance.csv"
-        with open(provenance_path, 'r') as file:
-            # Create a CSV DictReader
+def load_processed_studies():
+    """Load processed studies from a CSV file into a dictionary."""
+    processed_studies = {}
+    if os.path.exists(PROVENANCE_PATH):
+        with open(PROVENANCE_PATH, 'r') as file:
             reader = csv.DictReader(file)
-    
-            # i think we want a dict of dicts
-            processed_studies = {}
             for row in reader:
                 processed_studies[row['study']] = {'timestamp': row['timestamp'], 'code_revision': row['code_revision']}
+    return processed_studies
 
-        # get study and path from csv
-        studies = []
-        paths = []
-        all_studies_path = f"{base_path}/amplicon_studies.csv"
-        with open(all_studies_path, "r") as file:
-            next(file)
-            for line in file:
-                study, path = line.strip().split(",")
-                current_timestamp = os.path.getmtime(path)
-                processStudy = False
-                if (study in processed_studies):
-                    if ((current_timestamp > float(processed_studies[study]['timestamp'])) or
-                        (ampliseq_version != processed_studies[study]['code_revision'])):
-                        processStudy = True
-                else:
-                    processStudy = True
-                    
-                if processStudy: 
-                    studies.append(study)
-                    paths.append(path)
+def update_provenance_file(study, timestamp, code_revision='2.9.0'):
+    """Update the provenance file with the latest processing information."""
+    fieldnames = ['study', 'timestamp', 'code_revision']
+    new_data = {'study': study, 'timestamp': timestamp, 'code_revision': code_revision}
+    with open(PROVENANCE_PATH, 'a', newline='') as csvfile:
+        writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+        if os.stat(PROVENANCE_PATH).st_size == 0:
+            writer.writeheader()
+        writer.writerow(new_data)
 
-        # update code revision etc in processed_studies_provenance.csv
-        with open(provenance_path, 'w') as file:
-            writer = csv.writer(file)
-            writer.writerow(['study', 'timestamp', 'code_revision'])
-            for study in studies:
-                writer.writerow([study, current_timestamp, ampliseq_version])
+def create_dag():
+    default_args = {
+        'start_date': pendulum.datetime(2021, 1, 1, tz="UTC")
+    }
 
-        config_path = f"{base_path}ampliseq.config" # TODO validate exists
-        
-        commands = []
-        for i in range(len(studies)):
-            study = studies[i]
-            study_in_path = paths[i]
-            study_samplesheet_path = f"{study_in_path}/samplesheet.csv" # TODO validate exists
-            study_params_path = f"{study_in_path}/nf-params.json" # TODO validate exists
-            study_out_path = f"{study_in_path}/out"
-            study_work_dir = f"{study_in_path}/work"
+    with DAG(
+        dag_id="rx_test_automated_ampliseq_v5",
+        schedule_interval=None,
+        default_args=default_args,
+        catchup=False,
+    ) as dag:
+        processed_studies = load_processed_studies()
 
-            nextflow_command = (f"nextflow run nf-core/ampliseq -with-trace "
-                                f"-r {ampliseq_version} "
-                                f"-c {config_path} "
-                                f"-params-file {study_params_path} "
-                                f"-work-dir {study_work_dir} "
-                                f"--input {study_samplesheet_path} "
-                                f"--outdir {study_out_path} "
-                                f"-profile docker")
-            
-            # TODO dont want a hardcoded path here
-            R_command = (f"Rscript /data/MicrobiomeDB/mbio_airflow_dags/bin/ampliseq_postProcessing.R {study} {study_out_path}")
+        with TaskGroup("nextflow_tasks", tooltip="Nextflow processing tasks") as nextflow_tasks, \
+             TaskGroup("rscript_tasks", tooltip="R script processing tasks") as rscript_tasks:
 
-            command = (nextflow_command + "; " + R_command)
+            if os.path.exists(ALL_STUDIES_PATH):
+                with open(ALL_STUDIES_PATH, "r") as file:
+                    next(file)  # Skip header
+                    for line in file:
+                        study, path = line.strip().split(",")
+                        current_timestamp = os.path.getmtime(path)
+                        process_study = study not in processed_studies or processed_studies[study]['timestamp'] != str(current_timestamp)
 
-            commands.append(command)
+                        if process_study:
+                            templated_command_nextflow = textwrap.dedent("""
+                                nextflow run nf-core/ampliseq -with-tower -r 2.9.0 \
+                                -params-file {{ params.study_params_path }} \
+                                -work-dir {{ params.study_work_dir }} --input {{ params.study_samplesheet_path }} \
+                                --outdir {{ params.study_out_path }} \
+                                -c {{ params.study_config_path }} \
+                                -profile docker
+                            """)
 
-        return(commands)
+                            templated_command_rscript = textwrap.dedent("""
+                                Rscript /data/MicrobiomeDB/mbio_airflow_dags/bin/ampliseq_postProcessing.R \
+                                {{ params.study }} {{ params.study_out_path }}
+                            """)
 
-    commands = process_ampliseq_studies()
-    BashOperator.partial(task_id="run_ampliseq", do_xcom_push=False).expand(
-        bash_command=commands
-    )
+                            nextflow_task = BashOperator(
+                                task_id=f'nextflow_{study}',
+                                bash_command=templated_command_nextflow,
+                                params={
+                                    'study_params_path': join(path, "nf-params.json"),
+                                    'study_work_dir': join(path, "work"),
+                                    'study_samplesheet_path': join(path, "samplesheet.csv"),
+                                    'study_out_path': join(path, "out"),
+                                    'study_config_path': CONFIG_PATH
+                                },
+                                task_group=nextflow_tasks
+                            )
 
-if __name__ == "__main__":
-    dag.test()
+                            rscript_task = BashOperator(
+                                task_id=f'rscript_{study}',
+                                bash_command=templated_command_rscript,
+                                params={
+                                    'study': study,
+                                    'study_out_path': f"{path}/out"
+                                },
+                                task_group=rscript_tasks
+                            )
 
+                            # Create a task to update the provenance file after processing
+                            update_provenance_task = PythonOperator(
+                                task_id='update_provenance_{}'.format(study),
+                                python_callable=update_provenance_file,
+                                op_kwargs={'study': study, 'timestamp': str(current_timestamp)},
+                                dag=dag
+                            )
+
+                            nextflow_task >> rscript_task >> update_provenance_task
+            else:
+                raise FileNotFoundError(f"Studies file not found: {ALL_STUDIES_PATH}")
+
+        return dag
+
+# Define the DAG by calling the function
+ampliseq_pipeline = create_dag()

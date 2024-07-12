@@ -38,6 +38,7 @@ ALL_STUDIES_PATH = join(BASE_PATH, "metagenomics_studies.csv")
 MAG_CONFIG_PATH = join(BASE_PATH, "mag.config")
 MAG_VERSION = "3.0.1"
 TAXPROFILER_VERSION = "1.1.8"
+FETCHNGS_VERSION = "1.12.0"
 
 
 # we should configure airflow to rerun this if the DAG changes too
@@ -93,13 +94,21 @@ def create_dag():
         # this should send the whole directory to the cluster. 
         # is that what we want? or just specific files in the directory?
         # TODO do we still want to do this if there are no studies to process?
-        copy_config_to_cluster = cluster_manager.copyToCluster(
+        copy_mag_config_to_cluster = cluster_manager.copyToCluster(
             BASE_PATH, 
             'mag.config', 
             '.', 
             gzip=False, 
-            task_id = "copy_config_to_cluster"
-        )        
+            task_id = "copy_mag_config_to_cluster"
+        )
+
+        copy_fetchngs_config_to_cluster = cluster_manager.copyToCluster(
+            '/data/MicrobiomeDB/common',
+            'fetchngs.config',
+            '.',
+            gzip=False,
+            task_id = "copy_fetchngs_config_to_cluster"
+        )
 
         # TODO the references management should be a task group
         get_kraken_db = cluster_manager.startClusterJob(
@@ -173,9 +182,14 @@ def create_dag():
                                 task_group=current_tasks
                             )
 
-                            accessionsFile = os.path.join(studyPath, "accessions.txt")
+                            accessionsFile = os.path.join(studyPath, "accessions.tsv")
                             if os.path.exists(accessionsFile):
-                                cmd = f"nextflow run nf-core/fetchngs -c fetchngs.config --input {accessionsFile} --outdir {studyName}/data"
+                                cmd = (f"nextflow run nf-core/fetchngs " +
+                                       f"--input {tailStudyPath}/accessions.tsv " +
+                                       f"--outdir {tailStudyPath}/data " +
+                                       f"-r {FETCHNGS_VERSION}" +
+                                        "-c fetchngs.config" +
+                                        "--download_method sratools")
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -187,10 +201,11 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                draft_samplesheet = os.path.join(studyName, "data/samplesheet/samplesheet.csv")
-
-                                cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" \
-                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'"
+                                draft_samplesheet = os.path.join(tailStudyPath, "data/samplesheet/samplesheet.csv")
+                                
+                                cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" +
+                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'" +
+                                        " > {tailStudyPath}/samplesheet.csv")
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
                                 watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
@@ -215,7 +230,7 @@ def create_dag():
                                     task_group=current_tasks
                                 )
                             elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
-                                raise Exception(f"No samplesheet.csv or accessions.txt found for {studyName} in {studyPath}")
+                                raise Exception(f"No samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
 
                             cmd = ("nextflow run nf-core/taxprofiler -c taxprofiler.config " +
                                     f"-r {TAXPROFILER_VERSION} " +
@@ -236,8 +251,9 @@ def create_dag():
                             # TODO update mag stuff to reflect accomodating for taxprofiler
                             # ex: samplesheet.csv -> mag_samplesheet.csv, out -> mag_out, etc
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
-                                f"--input {studyName}/data/samplesheet.txt " +
-                                f"--outdir {studyName}/out " +
+                                f"--input {tailStudyPath}/samplesheet.csv " +
+                                f"--outdir {tailStudyPath}/out " +
+                                f"-r {MAG_VERSION}" +
                                 "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                 "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
                                 "--genomad_db \"genomad_db\"")
@@ -253,7 +269,7 @@ def create_dag():
 
                             copy_results_from_cluster = cluster_manager.copyFromCluster(
                                 '.', 
-                                f"{studyName}/out", 
+                                f"{tailStudyPath}/out", 
                                 os.path.join(studyPath, 'out'), 
                                 gzip=False,
                                 task_id = "copy_results_from_cluster",
@@ -310,7 +326,8 @@ def create_dag():
 
                             get_genomad_db >> current_tasks
                             get_kraken_db >> current_tasks
-                            copy_config_to_cluster >> current_tasks
+                            copy_mag_config_to_cluster >> current_tasks
+                            copy_fetchngs_config_to_cluster >> current_tasks
 
         else:
             raise FileNotFoundError(f"Studies file not found: {ALL_STUDIES_PATH}")

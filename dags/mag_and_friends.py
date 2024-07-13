@@ -295,8 +295,8 @@ def create_dag():
 
                             cmd = ("nextflow run nf-core/taxprofiler -c taxprofiler.config " +
                                     f"-r {TAXPROFILER_VERSION} " +
-                                    f"--outdir {tailStudyPath}/taxprofiler_out " +
-                                    f"--work-dir {studyName}/taxprofiler_work " +
+                                    f"--outdir {tailStudyPath}/out/taxprofiler_out " +
+                                    f"--work-dir {studyName}/work/taxprofiler_work " +
                                     f"--params-file {studyName}/taxprofiler-params.json")
                             run_taxprofiler = cluster_manager.startClusterJob(cmd, task_id="run_taxprofiler", task_group=current_tasks)
 
@@ -314,8 +314,8 @@ def create_dag():
                             # wed move to that subdir of the study dir before launching these types of commands
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
                                 f"--input {tailStudyPath}/mag_samplesheet.csv " +
-                                f"--outdir {tailStudyPath}/mag_out " +
-                                f"--work-dir {tailStudyPath}/mag_work " +
+                                f"--outdir {tailStudyPath}/out/mag_out " +
+                                f"--work-dir {tailStudyPath}/work/mag_work " +
                                 f"-r {MAG_VERSION}" +
                                 "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                 "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
@@ -332,8 +332,8 @@ def create_dag():
 
                             cmd = ("nextflow run nf-core/metatdenovo " +
                                     f"-r {METATDENOVO_VERSION} " +
-                                    f"-work-dir {tailStudyPath}/metatdenovo_work " +
-                                    f"-outdir {tailStudyPath}/metatdenovo_out " +
+                                    f"-work-dir {tailStudyPath}/work/metatdenovo_work " +
+                                    f"-outdir {tailStudyPath}/out/metatdenovo_out " +
                                     f"-params-file {tailStudyPath}/metatdenovo-params.json " +
                                     "-c metatdenovo.config"
                             )
@@ -348,9 +348,9 @@ def create_dag():
                             )                        
 
                             copy_results_from_cluster = cluster_manager.copyFromCluster(
-                                '.', 
-                                f"{tailStudyPath}/out", 
-                                os.path.join(studyPath, 'out'), 
+                                tailStudyPath, 
+                                "out", 
+                                studyPath,
                                 gzip=False,
                                 task_id = "copy_results_from_cluster",
                                 task_group=current_tasks

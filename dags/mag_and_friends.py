@@ -35,7 +35,7 @@ BASE_PATH = "/data/MicrobiomeDB/common/shotgun_metagenomics"
 PROVENANCE_PATH = join(BASE_PATH, "processed_studies_provenance.csv")
 # metagenomic_studies.csv should have two columns, one w the study name and the other the directory
 ALL_STUDIES_PATH = join(BASE_PATH, "metagenomics_studies.csv")
-MAG_CONFIG_PATH = join(BASE_PATH, "mag.config")
+
 MAG_VERSION = "3.0.1"
 TAXPROFILER_VERSION = "1.1.8"
 # the wget download method has a bug in version 1.12.0
@@ -108,8 +108,6 @@ def create_dag():
         copy_pipeline_configs = TaskGroup("copy_pipeline_configs")
         manage_reference_dbs = TaskGroup("manage_reference_dbs")
 
-        # this should send the whole directory to the cluster. 
-        # is that what we want? or just specific files in the directory?
         # TODO do we still want to do this if there are no studies to process?
         copy_mag_config_to_cluster = cluster_manager.copyToCluster(
             BASE_PATH, 
@@ -147,7 +145,6 @@ def create_dag():
             task_group = copy_pipeline_configs
         )
 
-        # TODO the references management should be a task group
         get_kraken_db = cluster_manager.startClusterJob(
             "if [[ ! -f k2_pluspf_20240112.tar.gz ]]; then wget https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_20240112.tar.gz; fi;",
             task_id = "get_kraken_db",
@@ -229,7 +226,9 @@ def create_dag():
 
                             accessionsFile = os.path.join(studyPath, "accessions.tsv")
                             if os.path.exists(accessionsFile):
-                                cmd = (f"nextflow run nf-core/fetchngs " +
+                                cmd = (f"mkdir -p {tailStudyPath}/fetchngs_logs; " +
+                                        f"cd {tailStudyPath}/fetchngs_logs; " +
+                                        f"nextflow run nf-core/fetchngs " +
                                         f"--input {tailStudyPath}/accessions.tsv " +
                                         f"--outdir {tailStudyPath}/data " +
                                         f"-r {FETCHNGS_VERSION}" +
@@ -249,7 +248,7 @@ def create_dag():
                                 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" +
                                         " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'" +
-                                        " > {tailStudyPath}/mag_samplesheet.csv")
+                                        f" > {tailStudyPath}/mag_samplesheet.csv")
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
                                 watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
@@ -261,7 +260,7 @@ def create_dag():
 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,ILLUMINA,$2,$3}}' {draft_samplesheet}" +
                                         " | sed 1,1d | sed '1i sample,run_accession,instrument_platform,fastq_1,fastq_2' | sed 's/\"//g'" +
-                                        " > {tailStudyPath}/taxprofiler_samplesheet.csv")
+                                        f" > {tailStudyPath}/taxprofiler_samplesheet.csv")
                                 make_taxprofiler_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
                                     task_id="make_taxprofiler_samplesheet", 
@@ -293,7 +292,9 @@ def create_dag():
                             elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
                                 raise Exception(f"No samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
 
-                            cmd = ("nextflow run nf-core/taxprofiler -c taxprofiler.config " +
+                            cmd = (f"mkdir -p {tailStudyPath}/out/taxprofiler_logs; " +
+                                    f"cd {tailStudyPath}/out/taxprofiler_logs; " +
+                                    "nextflow run nf-core/taxprofiler -c taxprofiler.config " +
                                     f"-r {TAXPROFILER_VERSION} " +
                                     f"--outdir {tailStudyPath}/out/taxprofiler_out " +
                                     f"--work-dir {studyName}/work/taxprofiler_work " +
@@ -310,16 +311,17 @@ def create_dag():
 
                             # TODO maybe make a constant for ref db names?
                             # TODO should clean up its work dir when its done
-                            # TODO should consider each pipeline gets its own dir so that logs and cache dont conflict
                             # wed move to that subdir of the study dir before launching these types of commands
-                            cmd = ("nextflow run nf-core/mag -c mag.config " +
-                                f"--input {tailStudyPath}/mag_samplesheet.csv " +
-                                f"--outdir {tailStudyPath}/out/mag_out " +
-                                f"--work-dir {tailStudyPath}/work/mag_work " +
-                                f"-r {MAG_VERSION}" +
-                                "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
-                                "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
-                                "--genomad_db \"genomad_db\"")
+                            cmd = (f"mkdir -p {tailStudyPath}/out/mag_logs; " +
+                                    f"cd {tailStudyPath}/out/mag_logs; " +
+                                    "nextflow run nf-core/mag -c mag.config " +
+                                    f"--input {tailStudyPath}/mag_samplesheet.csv " +
+                                    f"--outdir {tailStudyPath}/out/mag_out " +
+                                    f"--work-dir {tailStudyPath}/work/mag_work " +
+                                    f"-r {MAG_VERSION}" +
+                                    "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
+                                    "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
+                                    "--genomad_db \"genomad_db\"")
                             run_mag = cluster_manager.startClusterJob(cmd, task_id="run_mag", task_group=current_tasks)
 
                             watch_mag = cluster_manager.monitorClusterJob(
@@ -330,7 +332,9 @@ def create_dag():
                                 task_group=current_tasks
                             )
 
-                            cmd = ("nextflow run nf-core/metatdenovo " +
+                            cmd = (f"mkdir -p {tailStudyPath}/out/metatdenovo_logs; " +
+                                    f"cd {tailStudyPath}/out/metatdenovo_logs; " +
+                                    "nextflow run nf-core/metatdenovo " +
                                     f"-r {METATDENOVO_VERSION} " +
                                     f"-work-dir {tailStudyPath}/work/metatdenovo_work " +
                                     f"-outdir {tailStudyPath}/out/metatdenovo_out " +

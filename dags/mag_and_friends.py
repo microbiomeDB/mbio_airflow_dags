@@ -289,8 +289,8 @@ def create_dag():
                                     task_id="watch_make_metatdenovo_samplesheet",
                                     task_group=current_tasks
                                 )
-                            elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
-                                raise Exception(f"No samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
+                            elif not os.path.exists(os.path.join(studyPath, "mag_samplesheet.csv")):
+                                raise Exception(f"No *samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
 
                             cmd = (f"mkdir -p {tailStudyPath}/out/taxprofiler_logs; " +
                                     f"cd {tailStudyPath}/out/taxprofiler_logs; " +

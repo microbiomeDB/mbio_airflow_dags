@@ -38,14 +38,12 @@ ALL_STUDIES_PATH = join(BASE_PATH, "metagenomics_studies.csv")
 MAG_CONFIG_PATH = join(BASE_PATH, "mag.config")
 MAG_VERSION = "3.0.1"
 TAXPROFILER_VERSION = "1.1.8"
-FETCHNGS_VERSION = "1.12.0"
+# the wget download method has a bug in version 1.12.0
+# its fixed on dev, and we should use that for now
+# switch back to a stable version once the fix is merged and released
+FETCHNGS_VERSION = "dev"
+METATDENOVO_VERSION = "1.0.1"
 
-
-# we should configure airflow to rerun this if the DAG changes too
-# TODO once we add mag's friends, the processed studies file will
-# need to be changed so that 'code_revision' becomes something more specific
-# TODO should think about how this function relates to a hypothetical metatdenovo dag
-# say we had both running over the same studies... do we have two processed_studies files?
 # TODO i like these two functions, they should go in a utils file. 
 # maybe we could use a StudyProvenanceProcessor class or something?
 def load_processed_studies(provenance_path=PROVENANCE_PATH):
@@ -55,15 +53,31 @@ def load_processed_studies(provenance_path=PROVENANCE_PATH):
         with open(provenance_path, 'r') as file:
             reader = csv.DictReader(file)
             for row in reader:
-                processed_studies[row['study']] = {'timestamp': row['timestamp'], 'code_revision': row['code_revision']}
+                processed_studies[row['study']] = {'timestamp': row['timestamp'], 
+                                                    'mag_revision': row['mag_revision'],
+                                                    'metatdenovo_revision': row['metatdenovo_revision'],
+                                                    'taxprofiler_revision': row['taxprofiler_revision']}
     return processed_studies
 
 # TODO make sure this overwrites existing rows in the provenance file
 # TODO swap to using this in the dag below
-def update_provenance_file(study, timestamp, provenance_path=PROVENANCE_PATH, code_revision=MAG_VERSION):
+def update_provenance_file(
+    study, 
+    timestamp, 
+    provenance_path=PROVENANCE_PATH, 
+    mag_revision=MAG_VERSION,
+    metatdenovo_revision=METATDENOVO_VERSION,
+    taxprofiler_revision=TAXPROFILER_VERSION
+):
     """Update the provenance file with the latest processing information."""
-    fieldnames = ['study', 'timestamp', 'code_revision']
-    new_data = {'study': study, 'timestamp': timestamp, 'code_revision': code_revision}
+    fieldnames = ['study', 'timestamp', 'mag_revision', 'metatdenovo_revision', 'taxprofiler_revision']
+    new_data = {
+        'study': study, 
+        'timestamp': timestamp, 
+        'mag_revision': mag_revision,
+        'metatdenovo_revision': metatdenovo_revision,
+        'taxprofiler_revision': taxprofiler_revision
+    }
     with open(provenance_path, 'a', newline='') as csvfile:
         writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
         if os.stat(provenance_path).st_size == 0:
@@ -91,6 +105,9 @@ def create_dag():
             "{{params.clusterLogin}}"
         )
 
+        copy_pipeline_configs = TaskGroup("copy_pipeline_configs")
+        manage_reference_dbs = TaskGroup("manage_reference_dbs")
+
         # this should send the whole directory to the cluster. 
         # is that what we want? or just specific files in the directory?
         # TODO do we still want to do this if there are no studies to process?
@@ -99,7 +116,8 @@ def create_dag():
             'mag.config', 
             '.', 
             gzip=False, 
-            task_id = "copy_mag_config_to_cluster"
+            task_id = "copy_mag_config_to_cluster",
+            task_group = copy_pipeline_configs
         )
 
         copy_fetchngs_config_to_cluster = cluster_manager.copyToCluster(
@@ -107,20 +125,41 @@ def create_dag():
             'fetchngs.config',
             '.',
             gzip=False,
-            task_id = "copy_fetchngs_config_to_cluster"
+            task_id = "copy_fetchngs_config_to_cluster",
+            task_group = copy_pipeline_configs
+        )
+
+        copy_taxprofiler_config_to_cluster = cluster_manager.copyToCluster(
+            BASE_PATH,
+            'taxprofiler.config',
+            '.',
+            gzip=False,
+            task_id = "copy_taxprofiler_config_to_cluster",
+            task_group = copy_pipeline_configs
+        )
+
+        copy_metatdenovo_config_to_cluster = cluster_manager.copyToCluster(
+            BASE_PATH,
+            'metatdenovo.config',
+            '.',
+            gzip=False,
+            task_id = "copy_metatdenovo_config_to_cluster",
+            task_group = copy_pipeline_configs
         )
 
         # TODO the references management should be a task group
         get_kraken_db = cluster_manager.startClusterJob(
             "if [[ ! -f k2_pluspf_20240112.tar.gz ]]; then wget https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_20240112.tar.gz; fi;",
             task_id = "get_kraken_db",
-            do_xcom_push = False
+            do_xcom_push = False,
+            task_group = manage_reference_dbs
         )
 
         get_genomad_db = cluster_manager.startClusterJob(
             "if [[ ! -d genomad_db ]]; then conda create -n genomad -c conda-forge -c bioconda genomad; conda activate genomad; genomad download-database .; conda deactivate; fi;",
             task_id = "get_genomad_db",
-            do_xcom_push = False
+            do_xcom_push = False,
+            task_group = manage_reference_dbs
         )
 
         # useful for host reads removal
@@ -128,26 +167,30 @@ def create_dag():
         get_human_reference_genome = cluster_manager.startClusterJob(
             "if [[ ! -f hg38.fa.gz ]]; then wget https://hgdownload.soe.ucsc.edu/goldenPath/hg38/bigZips/hg38.fa.gz; fi;",
             task_id = "get_human_reference_genome",
-            do_xcom_push = False
+            do_xcom_push = False,
+            task_group = manage_reference_dbs
         )
 
         get_metaphlan_db = cluster_manager.startClusterJob(
             "if [[ ! -d metaphlan/metaphlan_databases ]]; then mkdir -p metaphlan/metaphlan_databases; wget http://cmprod1.cibio.unitn.it/biobakery4/metaphlan_databases/mpa_vJun23_CHOCOPhlAnSGB_202307.tar; tar -xvf mpa_vJun23_CHOCOPhlAnSGB_202307.tar -C metaphlan/metaphlan_databases; fi;",
             task_id = "get_metaphlan_db",
-            do_xcom_push = False
+            do_xcom_push = False,
+            task_group = manage_reference_dbs
         )
 
         get_mOTU_db = cluster_manager.startClusterJob(
             "if [[ ! -f db_mOTU_v3.0.1.tar.gz ]]; then wget https://zenodo.org/records/5140350/files/db_mOTU_v3.0.1.tar.gz; fi;",
             task_id = "get_mOTU_db",
-            do_xcom_push = False
+            do_xcom_push = False,
+            task_group = manage_reference_dbs
         )
 
         # this for taxpasta
         get_taxdump = cluster_manager.startClusterJob(
             "if [[ ! -d taxdump ]]; then wget wget https://ftp.ncbi.nlm.nih.gov/pub/taxonomy/new_taxdump/new_taxdump.tar.gz; tar -xvf new_taxdump.tar.gz -C taxdump; fi;",
             task_id = "get_taxdump",
-            do_xcom_push = False
+            do_xcom_push = False,
+            task_group = manage_reference_dbs
         )
 
         processed_studies = load_processed_studies()
@@ -160,7 +203,9 @@ def create_dag():
                     current_timestamp = os.path.getmtime(studyPath)
                     process_study = studyName not in processed_studies or \
                         processed_studies[studyName]['timestamp'] != str(current_timestamp) or \
-                        processed_studies[studyName]['code_revision'] != MAG_VERSION
+                        processed_studies[studyName]['mag_revision'] != MAG_VERSION or \
+                        processed_studies[studyName]['metatdenovo_revision'] != METATDENOVO_VERSION or \
+                        processed_studies[studyName]['taxprofiler_revision'] != TAXPROFILER_VERSION
 
                     if process_study:
                         # make a task group for each study
@@ -185,11 +230,10 @@ def create_dag():
                             accessionsFile = os.path.join(studyPath, "accessions.tsv")
                             if os.path.exists(accessionsFile):
                                 cmd = (f"nextflow run nf-core/fetchngs " +
-                                       f"--input {tailStudyPath}/accessions.tsv " +
-                                       f"--outdir {tailStudyPath}/data " +
-                                       f"-r {FETCHNGS_VERSION}" +
-                                        "-c fetchngs.config" +
-                                        "--download_method sratools")
+                                        f"--input {tailStudyPath}/accessions.tsv " +
+                                        f"--outdir {tailStudyPath}/data " +
+                                        f"-r {FETCHNGS_VERSION}" +
+                                        "-c fetchngs.config")
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -205,7 +249,7 @@ def create_dag():
                                 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" +
                                         " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'" +
-                                        " > {tailStudyPath}/samplesheet.csv")
+                                        " > {tailStudyPath}/mag_samplesheet.csv")
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
                                 watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
@@ -215,8 +259,9 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                cmd = f"awk -F ',' -v OFS=',' '{{print $1,$4,ILLUMINA,$2,$3}}' {draft_samplesheet}" \
-                                        " | sed 1,1d | sed '1i sample,run_accession,instrument_platform,fastq_1,fastq_2' | sed 's/\"//g'"
+                                cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,ILLUMINA,$2,$3}}' {draft_samplesheet}" +
+                                        " | sed 1,1d | sed '1i sample,run_accession,instrument_platform,fastq_1,fastq_2' | sed 's/\"//g'" +
+                                        " > {tailStudyPath}/taxprofiler_samplesheet.csv")
                                 make_taxprofiler_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
                                     task_id="make_taxprofiler_samplesheet", 
@@ -229,11 +274,28 @@ def create_dag():
                                     task_id="watch_make_taxprofiler_samplesheet",
                                     task_group=current_tasks
                                 )
+
+                                cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$2,$3}}' {draft_samplesheet}" +
+                                        " | sed 1,1d | sed '1i sample,fastq_1,fastq_2' | sed 's/\"//g'" +
+                                        " > {tailStudyPath}/metatdenovo_samplesheet.csv")
+                                make_metatdenovo_samplesheet = cluster_manager.startClusterJob(
+                                    cmd, 
+                                    task_id="make_metatdenovo_samplesheet", 
+                                    task_group=current_tasks
+                                )
+
+                                watch_make_metatdenovo_samplesheet = cluster_manager.monitorClusterJob(
+                                    make_metatdenovo_samplesheet.output, 
+                                    poke_interval=1,
+                                    task_id="watch_make_metatdenovo_samplesheet",
+                                    task_group=current_tasks
+                                )
                             elif not os.path.exists(os.path.join(studyPath, "samplesheet.csv")):
                                 raise Exception(f"No samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
 
                             cmd = ("nextflow run nf-core/taxprofiler -c taxprofiler.config " +
                                     f"-r {TAXPROFILER_VERSION} " +
+                                    f"--outdir {tailStudyPath}/taxprofiler_out " +
                                     f"--work-dir {studyName}/taxprofiler_work " +
                                     f"--params-file {studyName}/taxprofiler-params.json")
                             run_taxprofiler = cluster_manager.startClusterJob(cmd, task_id="run_taxprofiler", task_group=current_tasks)
@@ -248,11 +310,12 @@ def create_dag():
 
                             # TODO maybe make a constant for ref db names?
                             # TODO should clean up its work dir when its done
-                            # TODO update mag stuff to reflect accomodating for taxprofiler
-                            # ex: samplesheet.csv -> mag_samplesheet.csv, out -> mag_out, etc
+                            # TODO should consider each pipeline gets its own dir so that logs and cache dont conflict
+                            # wed move to that subdir of the study dir before launching these types of commands
                             cmd = ("nextflow run nf-core/mag -c mag.config " +
-                                f"--input {tailStudyPath}/samplesheet.csv " +
-                                f"--outdir {tailStudyPath}/out " +
+                                f"--input {tailStudyPath}/mag_samplesheet.csv " +
+                                f"--outdir {tailStudyPath}/mag_out " +
+                                f"--work-dir {tailStudyPath}/mag_work " +
                                 f"-r {MAG_VERSION}" +
                                 "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                 "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
@@ -266,6 +329,23 @@ def create_dag():
                                 task_id="watch_mag",
                                 task_group=current_tasks
                             )
+
+                            cmd = ("nextflow run nf-core/metatdenovo " +
+                                    f"-r {METATDENOVO_VERSION} " +
+                                    f"-work-dir {tailStudyPath}/metatdenovo_work " +
+                                    f"-outdir {tailStudyPath}/metatdenovo_out " +
+                                    f"-params-file {tailStudyPath}/metatdenovo-params.json " +
+                                    "-c metatdenovo.config"
+                            )
+                            run_metatdenovo = cluster_manager.startClusterJob(cmd, task_id="run_metatdenovo", task_group=current_tasks)
+
+                            watch_metatdenovo = cluster_manager.monitorClusterJob(
+                                run_metatdenovo.output, 
+                                mode='reschedule', 
+                                poke_interval=1800, 
+                                task_id="watch_metatdenovo",
+                                task_group=current_tasks
+                            )                        
 
                             copy_results_from_cluster = cluster_manager.copyFromCluster(
                                 '.', 
@@ -287,7 +367,7 @@ def create_dag():
                             @task(task_group=current_tasks)
                             def update_provenance():
                                 # this should find the row where 'study' == studyName
-                                # and update its 'timestamp' and 'code_revision'
+                                # and update its 'timestamp' and 'mag_revision'
                                 # or add a new row if it doesn't exist
                                 current_timestamp = os.path.getmtime(studyPath)
                                 with open(PROVENANCE_PATH, 'rw') as file:
@@ -299,11 +379,30 @@ def create_dag():
                                     for row in reader:
                                         if (row['study'] == studyName):
                                             row['timestamp'] = current_timestamp
-                                            row['code_revision'] = MAG_VERSION
+                                            row['mag_revision'] = MAG_VERSION
+                                            row['metatdenovo_revision'] = METATDENOVO_VERSION
+                                            row['taxprofiler_revision'] = TAXPROFILER_VERSION
                                             writer.writerow(row)
                                             break
                                         else:
                                             writer.writerow([studyName, current_timestamp, MAG_VERSION])
+
+                            copy_study_to_cluster >> \
+                            run_mag >> \
+                            watch_mag >> \
+                            copy_results_from_cluster >> \
+                            post_process_results() >> \
+                            update_provenance()
+
+                            copy_study_to_cluster >> \
+                            run_metatdenovo >> \
+                            watch_metatdenovo >> \
+                            copy_results_from_cluster 
+                            
+                            copy_study_to_cluster >> \
+                            run_taxprofiler >> \
+                            watch_taxprofiler >> \
+                            copy_results_from_cluster
 
                             if os.path.exists(accessionsFile):
                                 copy_study_to_cluster >> \
@@ -311,23 +410,10 @@ def create_dag():
                                 watch_fetchngs >> \
                                 make_mag_samplesheet >> \
                                 watch_make_mag_samplesheet >> \
-                                run_mag >> \
-                                watch_mag >> \
-                                copy_results_from_cluster >> \
-                                post_process_results() >> \
-                                update_provenance()
-                            else:
-                                copy_study_to_cluster >> \
-                                run_mag >> \
-                                watch_mag >> \
-                                copy_results_from_cluster >> \
-                                post_process_results() >> \
-                                update_provenance()
+                                run_mag
 
-                            get_genomad_db >> current_tasks
-                            get_kraken_db >> current_tasks
-                            copy_mag_config_to_cluster >> current_tasks
-                            copy_fetchngs_config_to_cluster >> current_tasks
+                            copy_pipeline_configs >> current_tasks
+                            manage_reference_dbs >> current_tasks
 
         else:
             raise FileNotFoundError(f"Studies file not found: {ALL_STUDIES_PATH}")

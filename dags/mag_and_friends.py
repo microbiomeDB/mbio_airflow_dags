@@ -412,6 +412,16 @@ def create_dag():
                                 watch_make_mag_samplesheet >> \
                                 run_mag
 
+                                watch_fetchngs >> \
+                                make_taxprofiler_samplesheet >> \
+                                watch_make_taxprofiler_samplesheet >> \
+                                run_taxprofiler
+
+                                watch_fetchngs >> \
+                                make_metatdenovo_samplesheet >> \
+                                watch_make_metatdenovo_samplesheet >> \
+                                run_metatdenovo
+
                             copy_pipeline_configs >> current_tasks
                             manage_reference_dbs >> current_tasks
 

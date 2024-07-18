@@ -229,10 +229,10 @@ def create_dag():
                                 cmd = (f"mkdir -p {tailStudyPath}/fetchngs_logs; " +
                                         f"cd {tailStudyPath}/fetchngs_logs; " +
                                         f"nextflow run nf-core/fetchngs " +
-                                        f"--input {tailStudyPath}/accessions.tsv " +
-                                        f"--outdir {tailStudyPath}/data " +
-                                        f"-r {FETCHNGS_VERSION}" +
-                                        "-c fetchngs.config")
+                                        f"--input ~/{tailStudyPath}/accessions.tsv " +
+                                        f"--outdir ~/{tailStudyPath}/data " +
+                                        f"-r {FETCHNGS_VERSION} " +
+                                        "-c ~/fetchngs.config")
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
                                 # 900 seconds is 15 minutes, considered making it 5 min instead and still might
@@ -247,7 +247,7 @@ def create_dag():
                                 draft_samplesheet = os.path.join(tailStudyPath, "data/samplesheet/samplesheet.csv")
                                 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\"//g'" +
+                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\\\"//g'" +
                                         f" > {tailStudyPath}/mag_samplesheet.csv")
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
@@ -259,7 +259,7 @@ def create_dag():
                                 )
 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,ILLUMINA,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i sample,run_accession,instrument_platform,fastq_1,fastq_2' | sed 's/\"//g'" +
+                                        " | sed 1,1d | sed '1i sample,run_accession,instrument_platform,fastq_1,fastq_2' | sed 's/\\\"//g'" +
                                         f" > {tailStudyPath}/taxprofiler_samplesheet.csv")
                                 make_taxprofiler_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
@@ -275,7 +275,7 @@ def create_dag():
                                 )
 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i sample,fastq_1,fastq_2' | sed 's/\"//g'" +
+                                        " | sed 1,1d | sed '1i sample,fastq_1,fastq_2' | sed 's/\\\"//g'" +
                                         " > {tailStudyPath}/metatdenovo_samplesheet.csv")
                                 make_metatdenovo_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
@@ -289,16 +289,20 @@ def create_dag():
                                     task_id="watch_make_metatdenovo_samplesheet",
                                     task_group=current_tasks
                                 )
+
                             elif not os.path.exists(os.path.join(studyPath, "mag_samplesheet.csv")):
                                 raise Exception(f"No *samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
 
                             cmd = (f"mkdir -p {tailStudyPath}/out/taxprofiler_logs; " +
                                     f"cd {tailStudyPath}/out/taxprofiler_logs; " +
-                                    "nextflow run nf-core/taxprofiler -c taxprofiler.config " +
+                                    "nextflow run nf-core/taxprofiler " +
+                                    f"-c ~/taxprofiler.config " +
                                     f"-r {TAXPROFILER_VERSION} " +
-                                    f"--outdir {tailStudyPath}/out/taxprofiler_out " +
-                                    f"--work-dir {studyName}/work/taxprofiler_work " +
-                                    f"--params-file {studyName}/taxprofiler-params.json")
+                                    f"--input ~/{tailStudyPath}/taxprofiler_samplesheet.csv " +
+                                    f"--databases ~/{tailStudyPath}/taxprofiler_databases.csv " +
+                                    f"--outdir ~/{tailStudyPath}/out/taxprofiler_out " +
+                                    f"-work-dir ~/{tailStudyPath}/work/taxprofiler_work " +
+                                    f"-params-file ~/{tailStudyPath}/taxprofiler-params.json")
                             run_taxprofiler = cluster_manager.startClusterJob(cmd, task_id="run_taxprofiler", task_group=current_tasks)
 
                             watch_taxprofiler = cluster_manager.monitorClusterJob(
@@ -314,14 +318,15 @@ def create_dag():
                             # wed move to that subdir of the study dir before launching these types of commands
                             cmd = (f"mkdir -p {tailStudyPath}/out/mag_logs; " +
                                     f"cd {tailStudyPath}/out/mag_logs; " +
-                                    "nextflow run nf-core/mag -c mag.config " +
-                                    f"--input {tailStudyPath}/mag_samplesheet.csv " +
-                                    f"--outdir {tailStudyPath}/out/mag_out " +
-                                    f"--work-dir {tailStudyPath}/work/mag_work " +
-                                    f"-r {MAG_VERSION}" +
+                                    "nextflow run nf-core/mag " +
+                                    "-c ~/mag.config " +
+                                    f"--input ~/{tailStudyPath}/mag_samplesheet.csv " +
+                                    f"--outdir ~/{tailStudyPath}/out/mag_out " +
+                                    f"-work-dir ~/{tailStudyPath}/work/mag_work " +
+                                    f"-r {MAG_VERSION} " +
                                     "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
-                                    "--kraken2_db \"k2_pluspf_20240112.tar.gz\" " +
-                                    "--genomad_db \"genomad_db\"")
+                                    "--kraken2_db ~/k2_pluspf_20240112.tar.gz " +
+                                    "--genomad_db ~/genomad_db")
                             run_mag = cluster_manager.startClusterJob(cmd, task_id="run_mag", task_group=current_tasks)
 
                             watch_mag = cluster_manager.monitorClusterJob(
@@ -336,10 +341,11 @@ def create_dag():
                                     f"cd {tailStudyPath}/out/metatdenovo_logs; " +
                                     "nextflow run nf-core/metatdenovo " +
                                     f"-r {METATDENOVO_VERSION} " +
-                                    f"-work-dir {tailStudyPath}/work/metatdenovo_work " +
-                                    f"-outdir {tailStudyPath}/out/metatdenovo_out " +
-                                    f"-params-file {tailStudyPath}/metatdenovo-params.json " +
-                                    "-c metatdenovo.config"
+                                    f"-work-dir ~/{tailStudyPath}/work/metatdenovo_work " +
+                                    f"--input ~/{tailStudyPath}/metatdenovo_samplesheet.csv " +
+                                    f"--outdir ~/{tailStudyPath}/out/metatdenovo_out " +
+                                    f"-params-file ~/{tailStudyPath}/metatdenovo-params.json " +
+                                    "-c ~/metatdenovo.config"
                             )
                             run_metatdenovo = cluster_manager.startClusterJob(cmd, task_id="run_metatdenovo", task_group=current_tasks)
 

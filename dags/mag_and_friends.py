@@ -247,7 +247,7 @@ def create_dag():
                                 draft_samplesheet = os.path.join(tailStudyPath, "data/samplesheet/samplesheet.csv")
                                 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i sample,run,group,short_reads_1,short_reads_2' | sed 's/\\\"//g'" +
+                                        " | sed 1,1d | sed '1i \\\\\"sample\\\\\",\\\\\"run\\\\\",\\\\\"group\\\\\",\\\\\"short_reads_1\\\\\",\\\\\"short_reads_2\\\\\"'" +
                                         f" > {tailStudyPath}/mag_samplesheet.csv")
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
@@ -259,7 +259,7 @@ def create_dag():
                                 )
 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,ILLUMINA,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i sample,run_accession,instrument_platform,fastq_1,fastq_2' | sed 's/\\\"//g'" +
+                                        " | sed 1,1d | sed '1i \\\\\"sample\\\\\",\\\\\"run_accession\\\\\",\\\\\"instrument_platform\\\\\",\\\\\"fastq_1\\\\\",\\\\\"fastq_2\\\\\"'" +
                                         f" > {tailStudyPath}/taxprofiler_samplesheet.csv")
                                 make_taxprofiler_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
@@ -275,7 +275,7 @@ def create_dag():
                                 )
 
                                 cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i sample,fastq_1,fastq_2' | sed 's/\\\"//g'" +
+                                        " | sed 1,1d | sed '1i \\\\\"sample\\\\\",\\\\\"fastq_1\\\\\",\\\\\"fastq_2\\\\\"'" +
                                         " > {tailStudyPath}/metatdenovo_samplesheet.csv")
                                 make_metatdenovo_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
@@ -376,26 +376,27 @@ def create_dag():
                             # this should either update or add a row to the study provenance file
                             @task(task_group=current_tasks)
                             def update_provenance():
-                                # this should find the row where 'study' == studyName
-                                # and update its 'timestamp' and 'mag_revision'
-                                # or add a new row if it doesn't exist
-                                current_timestamp = os.path.getmtime(studyPath)
-                                with open(PROVENANCE_PATH, 'rw') as file:
-                                    reader = csv.DictReader(file)
-                                    writer = csv.writer(file)
-                                    #ignore header
-                                    next(file)
 
-                                    for row in reader:
-                                        if (row['study'] == studyName):
-                                            row['timestamp'] = current_timestamp
-                                            row['mag_revision'] = MAG_VERSION
-                                            row['metatdenovo_revision'] = METATDENOVO_VERSION
-                                            row['taxprofiler_revision'] = TAXPROFILER_VERSION
-                                            writer.writerow(row)
-                                            break
-                                        else:
-                                            writer.writerow([studyName, current_timestamp, MAG_VERSION])
+                                fieldnames = ['study', 'timestamp', 'mag_revision', 'metatdenovo_revision', 'taxprofiler_revision']
+                                # Update or append new data
+                                with open(PROVENANCE_PATH, 'w', newline='') as csvfile:
+                                    writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                                    writer.writeheader()
+                                    
+                                    updated_study = {
+                                        'study': studyName,
+                                        'timestamp': current_timestamp,
+                                        'mag_revision': MAG_VERSION,
+                                        'taxprofiler_revision': TAXPROFILER_VERSION,
+                                        'metatdenovo_revision': METATDENOVO_VERSION
+                                    }
+
+                                    # Merge with existing data
+                                    all_data = {d['study']: d for d in processed_studies}
+                                    all_data.update({studyName, updated_study})
+
+                                    # Write back to the file
+                                    writer.writerows(all_data.values())
 
                             copy_study_to_cluster >> \
                             run_mag >> \

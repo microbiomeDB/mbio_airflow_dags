@@ -246,8 +246,8 @@ def create_dag():
 
                                 draft_samplesheet = os.path.join(tailStudyPath, "data/samplesheet/samplesheet.csv")
                                 
-                                cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,$5,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i \\\\\"sample\\\\\",\\\\\"run\\\\\",\\\\\"group\\\\\",\\\\\"short_reads_1\\\\\",\\\\\"short_reads_2\\\\\"'" +
+                                cmd = (f"cut -d, -f 1,4,5,2,3 {draft_samplesheet} | sed \\\"s/\\\\\\\"//g\\\"" +
+                                        " | sed 1,1d | sed \\\"1i sample,run,group,short_reads_1,short_reads_2\\\"" +
                                         f" > {tailStudyPath}/mag_samplesheet.csv")
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
@@ -258,8 +258,8 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$4,ILLUMINA,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i \\\\\"sample\\\\\",\\\\\"run_accession\\\\\",\\\\\"instrument_platform\\\\\",\\\\\"fastq_1\\\\\",\\\\\"fastq_2\\\\\"'" +
+                                cmd = (f"cut -d, -f 1,4,21,2,3 {draft_samplesheet} | sed \\\"s/\\\\\\\"//g\\\"" +
+                                        " | sed 1,1d | sed \\\"1i sample,run_accession,instrument_platform,fastq_1,fastq_2\\\"" +
                                         f" > {tailStudyPath}/taxprofiler_samplesheet.csv")
                                 make_taxprofiler_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
@@ -274,8 +274,8 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                cmd = (f"awk -F ',' -v OFS=',' '{{print $1,$2,$3}}' {draft_samplesheet}" +
-                                        " | sed 1,1d | sed '1i \\\\\"sample\\\\\",\\\\\"fastq_1\\\\\",\\\\\"fastq_2\\\\\"'" +
+                                cmd = (f"cut -d, -f 1,2,3 {draft_samplesheet} | sed \\\"s/\\\\\\\"//g\\\"" +
+                                        " | sed 1,1d | sed \\\"1i sample,fastq_1,fastq_2\\\"" +
                                         " > {tailStudyPath}/metatdenovo_samplesheet.csv")
                                 make_metatdenovo_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
@@ -393,7 +393,7 @@ def create_dag():
 
                                     # Merge with existing data
                                     all_data = {d['study']: d for d in processed_studies}
-                                    all_data.update({studyName, updated_study})
+                                    all_data.update({studyName: updated_study})
 
                                     # Write back to the file
                                     writer.writerows(all_data.values())

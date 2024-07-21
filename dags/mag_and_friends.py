@@ -145,6 +145,14 @@ def create_dag():
             task_group = copy_pipeline_configs
         )
 
+        copy_samplesheet_templates_to_cluster = cluster_manager.copyToCluster(
+            BASE_PATH,
+            'samplesheet_templates',
+            '.',
+            gzip=False,
+            task_id = "copy_samplesheet_templates_to_cluster"
+        )
+
         get_kraken_db = cluster_manager.startClusterJob(
             "if [[ ! -f k2_pluspf_20240112.tar.gz ]]; then wget https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_20240112.tar.gz; fi;",
             task_id = "get_kraken_db",
@@ -246,9 +254,9 @@ def create_dag():
 
                                 draft_samplesheet = os.path.join(tailStudyPath, "data/samplesheet/samplesheet.csv")
                                 
-                                cmd = (f"cut -d, -f 1,4,5,2,3 {draft_samplesheet} | sed \\\"s/\\\\\\\"//g\\\"" +
-                                        " | sed 1,1d | sed \\\"1i sample,run,group,short_reads_1,short_reads_2\\\"" +
-                                        f" > {tailStudyPath}/mag_samplesheet.csv")
+                                cmd = (f'cut -d, -f 1,4,5,2,3 {draft_samplesheet} ' +
+                                        ' | sed 1,1d | cat samplesheet_templates/mag_samplesheet_template.csv - ' +
+                                        f' > {tailStudyPath}/mag_samplesheet.csv')
                                 make_mag_samplesheet = cluster_manager.startClusterJob(cmd, task_id="make_mag_samplesheet", task_group=current_tasks)
 
                                 watch_make_mag_samplesheet = cluster_manager.monitorClusterJob(
@@ -258,9 +266,9 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                cmd = (f"cut -d, -f 1,4,21,2,3 {draft_samplesheet} | sed \\\"s/\\\\\\\"//g\\\"" +
-                                        " | sed 1,1d | sed \\\"1i sample,run_accession,instrument_platform,fastq_1,fastq_2\\\"" +
-                                        f" > {tailStudyPath}/taxprofiler_samplesheet.csv")
+                                cmd = (f'cut -d, -f 1,4,21,2,3 {draft_samplesheet} ' +
+                                        ' | sed 1,1d | cat samplesheet_templates/taxprofiler_samplesheet_template.csv - ' +
+                                        f' > {tailStudyPath}/taxprofiler_samplesheet.csv')
                                 make_taxprofiler_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
                                     task_id="make_taxprofiler_samplesheet", 
@@ -274,9 +282,9 @@ def create_dag():
                                     task_group=current_tasks
                                 )
 
-                                cmd = (f"cut -d, -f 1,2,3 {draft_samplesheet} | sed \\\"s/\\\\\\\"//g\\\"" +
-                                        " | sed 1,1d | sed \\\"1i sample,fastq_1,fastq_2\\\"" +
-                                        " > {tailStudyPath}/metatdenovo_samplesheet.csv")
+                                cmd = (f'cut -d, -f 1,2,3 {draft_samplesheet} ' +
+                                        ' | sed 1,1d | cat samplesheet_templates/metatdenovo_samplesheet_template.csv - ' +
+                                        ' > {tailStudyPath}/metatdenovo_samplesheet.csv')
                                 make_metatdenovo_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
                                     task_id="make_metatdenovo_samplesheet", 
@@ -434,6 +442,7 @@ def create_dag():
                                 run_metatdenovo
 
                             copy_pipeline_configs >> current_tasks
+                            copy_samplesheet_templates_to_cluster >> current_tasks
                             manage_reference_dbs >> current_tasks
 
         else:

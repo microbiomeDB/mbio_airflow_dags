@@ -232,6 +232,8 @@ def create_dag():
                                 task_group=current_tasks
                             )
 
+                            # TODO should add cleanup steps at the end so we dont pay for huge fastq file storage fees on cluster
+                            # TODO should add explicit names to nextflow runs like [studyName]_[pipelineName]_[timestamp]
                             accessionsFile = os.path.join(studyPath, "accessions.tsv")
                             if os.path.exists(accessionsFile):
                                 cmd = (f"mkdir -p {tailStudyPath}/fetchngs_logs; " +
@@ -240,14 +242,14 @@ def create_dag():
                                         f"--input ~/{tailStudyPath}/accessions.tsv " +
                                         f"--outdir ~/{tailStudyPath}/data " +
                                         f"-r {FETCHNGS_VERSION} " +
-                                        "-c ~/fetchngs.config")
+                                        "-c ~/fetchngs.config " +
+                                        "-resume")
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
-                                # 900 seconds is 15 minutes, considered making it 5 min instead and still might
                                 watch_fetchngs = cluster_manager.monitorClusterJob(
                                     run_fetchngs.output, 
                                     mode='reschedule', 
-                                    poke_interval=900,
+                                    poke_interval=300,
                                     task_id="watch_fetchngs",
                                     task_group=current_tasks
                                 )
@@ -284,7 +286,7 @@ def create_dag():
 
                                 cmd = (f'cut -d, -f 1,2,3 {draft_samplesheet} ' +
                                         ' | sed 1,1d | cat samplesheet_templates/metatdenovo_samplesheet_template.csv - ' +
-                                        ' > {tailStudyPath}/metatdenovo_samplesheet.csv')
+                                        f' > {tailStudyPath}/metatdenovo_samplesheet.csv')
                                 make_metatdenovo_samplesheet = cluster_manager.startClusterJob(
                                     cmd, 
                                     task_id="make_metatdenovo_samplesheet", 
@@ -316,7 +318,7 @@ def create_dag():
                             watch_taxprofiler = cluster_manager.monitorClusterJob(
                                 run_taxprofiler.output, 
                                 mode='reschedule', 
-                                poke_interval=1800, 
+                                poke_interval=300, 
                                 task_id="watch_taxprofiler",
                                 task_group=current_tasks
                             )
@@ -340,7 +342,7 @@ def create_dag():
                             watch_mag = cluster_manager.monitorClusterJob(
                                 run_mag.output, 
                                 mode='reschedule', 
-                                poke_interval=1800, 
+                                poke_interval=300, 
                                 task_id="watch_mag",
                                 task_group=current_tasks
                             )
@@ -360,7 +362,7 @@ def create_dag():
                             watch_metatdenovo = cluster_manager.monitorClusterJob(
                                 run_metatdenovo.output, 
                                 mode='reschedule', 
-                                poke_interval=1800, 
+                                poke_interval=300, 
                                 task_id="watch_metatdenovo",
                                 task_group=current_tasks
                             )                        

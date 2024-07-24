@@ -9,12 +9,17 @@ import os
 import textwrap
 from datetime import timedelta
 
+
+# WIP: Implement branching, allow DAG to be executed either locally, or on remote clusters based on choice
+# WIP: AirFlow task branching decision making should use updated amplicon_studies.csv or samplesheet.csv where an additional column is added to indicate which branch airflow should follow 
+
+
 # Constants for file paths
 BASE_PATH = "/home/ruicatxiao/mbio_af_branch/local_testing_data_config"
 PROVENANCE_PATH = os.path.join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = os.path.join(BASE_PATH, "amplicon_studies.csv")
 CONFIG_PATH = os.path.join(BASE_PATH, "ampliseq.config")
-AMPLISEQ_VERSION = '2.9.0'  # Changed from AUOTMATED_AMPLISEQ_VERSION
+AMPLISEQ_VERSION = '2.9.0'
 
 def create_dag():
     default_args = {
@@ -22,40 +27,52 @@ def create_dag():
     }
 
     with DAG(
-        # this dag_id of v8 is for testing purpose only
         dag_id="automated_ampliseq",
         schedule_interval=None,
         default_args={
-        "retries": 10,
-        'retry_delay': timedelta(seconds=2),
+            "retries": 10,
+            'retry_delay': timedelta(seconds=2),
         },
         catchup=False,
-
     ) as dag:
 
         @task
         def load_studies():
-            processed_studies_dict = {}  # Renamed for clarity
+            processed_studies_dict = {}
             if os.path.exists(PROVENANCE_PATH):
                 with open(PROVENANCE_PATH, 'r') as file:
                     reader = csv.DictReader(file)
                     for row in reader:
-                        processed_studies_dict[row['study']] = row['code_revision']
+                        processed_studies_dict[row['study']] = {
+                            'timestamp': row['timestamp'],
+                            'code_revision': row['code_revision']
+                        }
 
             studies = []
             if os.path.exists(ALL_STUDIES_PATH):
                 with open(ALL_STUDIES_PATH, "r") as file:
                     next(file)  # Skip header
                     for line in file:
-                        study, path = line.strip().split(",")
-                        if (study not in processed_studies_dict or
-                            processed_studies_dict[study] != AMPLISEQ_VERSION):
-                            current_timestamp = str(os.path.getmtime(path))
-                            studies.append({
-                                'study': study,
-                                'path': path,
-                                'current_timestamp': current_timestamp
-                            })
+                        study, study_path = line.strip().split(",")
+                        samplesheet_path = os.path.join(study_path, "samplesheet.csv")
+                        if os.path.exists(samplesheet_path):
+                            current_timestamp = str(os.path.getmtime(samplesheet_path))
+                            
+                            process_study = False
+                            if study not in processed_studies_dict:
+                                process_study = True
+                            else:
+                                stored_data = processed_studies_dict[study]
+                                if (current_timestamp > stored_data['timestamp'] or
+                                    AMPLISEQ_VERSION != stored_data['code_revision']):
+                                    process_study = True
+
+                            if process_study:
+                                studies.append({
+                                    'study': study,
+                                    'path': study_path,
+                                    'current_timestamp': current_timestamp
+                                })
             return studies
 
         @task
@@ -91,9 +108,9 @@ def create_dag():
 
         loaded_studies = load_studies()
 
-        with TaskGroup("processing_tasks", tooltip="Processing tasks") as processing_tasks:  # Merged task groups
-            process_task = BashOperator.partial(
-                task_id='process_task',
+        with TaskGroup("process_amplicon_studies", tooltip="Process Amplicon Studies") as process_amplicon_studies:
+            run_ampliseq = BashOperator.partial(
+                task_id='run_ampliseq',
                 bash_command=textwrap.dedent("""\
                     nextflow run nf-core/ampliseq -with-tower -r {{ params.ampliseq_version }} \
                     -params-file {{ params.study_params_path }} \
@@ -112,7 +129,7 @@ def create_dag():
                     'study_config_path': CONFIG_PATH
                 })
             ) >> BashOperator.partial(  # Chained to ensure order
-                task_id='rscript_task',
+                task_id='run_r_postprocessing',
                 bash_command=textwrap.dedent("""\
                     Rscript /data/MicrobiomeDB/mbio_airflow_dags/bin/ampliseq_postProcessing.R \
                     {{ params.study }} {{ params.study_out_path }}
@@ -126,7 +143,7 @@ def create_dag():
 
         update_provenance_task = update_provenance(loaded_studies)
 
-        process_task >> update_provenance_task  # Ensure correct task order
+        run_ampliseq >> update_provenance_task  # Ensure correct task order
 
         return dag
 

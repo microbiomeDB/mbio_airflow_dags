@@ -3,6 +3,7 @@ from airflow.utils.task_group import TaskGroup
 from airflow.decorators import task
 
 from os.path import join
+from datetime import datetime
 
 from mbio_utils.cluster_manager import ClusterManager
 
@@ -43,6 +44,8 @@ TAXPROFILER_VERSION = "1.1.8"
 # switch back to a stable version once the fix is merged and released
 FETCHNGS_VERSION = "dev"
 METATDENOVO_VERSION = "1.0.1"
+
+NEXTFLOW_VERSION = "23.10.1"
 
 # TODO i like these two functions, they should go in a utils file. 
 # maybe we could use a StudyProvenanceProcessor class or something?
@@ -205,9 +208,9 @@ def create_dag():
                 next(file)  # Skip header
                 for line in file:
                     studyName, studyPath = line.strip().split(",")
-                    current_timestamp = os.path.getmtime(studyPath)
+                    current_timestamp = str(os.path.getmtime(studyPath))
                     process_study = studyName not in processed_studies or \
-                        processed_studies[studyName]['timestamp'] != str(current_timestamp) or \
+                        processed_studies[studyName]['timestamp'] != current_timestamp or \
                         processed_studies[studyName]['mag_revision'] != MAG_VERSION or \
                         processed_studies[studyName]['metatdenovo_revision'] != METATDENOVO_VERSION or \
                         processed_studies[studyName]['taxprofiler_revision'] != TAXPROFILER_VERSION
@@ -231,6 +234,8 @@ def create_dag():
                                 task_id = "copy_study_to_cluster",
                                 task_group=current_tasks
                             )
+                            
+                            run_time = datetime.now().strftime('%Y-%m-%d_%H-%M')
 
                             # TODO should add cleanup steps at the end so we dont pay for huge fastq file storage fees on cluster
                             # TODO should add explicit names to nextflow runs like [studyName]_[pipelineName]_[timestamp]
@@ -238,11 +243,13 @@ def create_dag():
                             if os.path.exists(accessionsFile):
                                 cmd = (f"mkdir -p {tailStudyPath}/fetchngs_logs; " +
                                         f"cd {tailStudyPath}/fetchngs_logs; " +
+                                        f"NXF_VER={NEXTFLOW_VERSION} " +
                                         f"nextflow run nf-core/fetchngs " +
                                         f"--input ~/{tailStudyPath}/accessions.tsv " +
                                         f"--outdir ~/{tailStudyPath}/data " +
                                         f"-r {FETCHNGS_VERSION} " +
                                         "-c ~/fetchngs.config " +
+                                        f"-name {studyName}_{run_time} " +
                                         "-resume")
                                 run_fetchngs = cluster_manager.startClusterJob(cmd, task_id="run_fetchngs", task_group=current_tasks)
 
@@ -305,6 +312,7 @@ def create_dag():
 
                             cmd = (f"mkdir -p {tailStudyPath}/out/taxprofiler_logs; " +
                                     f"cd {tailStudyPath}/out/taxprofiler_logs; " +
+                                    f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/taxprofiler " +
                                     f"-c ~/taxprofiler.config " +
                                     f"-r {TAXPROFILER_VERSION} " +
@@ -312,7 +320,10 @@ def create_dag():
                                     f"--databases ~/{tailStudyPath}/taxprofiler_databases.csv " +
                                     f"--outdir ~/{tailStudyPath}/out/taxprofiler_out " +
                                     f"-work-dir ~/{tailStudyPath}/work/taxprofiler_work " +
-                                    f"-params-file ~/{tailStudyPath}/taxprofiler-params.json")
+                                    f"-params-file ~/{tailStudyPath}/taxprofiler-params.json " +
+                                    f"-name {studyName}_{run_time} " +
+                                    "-resume"
+                            )
                             run_taxprofiler = cluster_manager.startClusterJob(cmd, task_id="run_taxprofiler", task_group=current_tasks)
 
                             watch_taxprofiler = cluster_manager.monitorClusterJob(
@@ -328,6 +339,7 @@ def create_dag():
                             # wed move to that subdir of the study dir before launching these types of commands
                             cmd = (f"mkdir -p {tailStudyPath}/out/mag_logs; " +
                                     f"cd {tailStudyPath}/out/mag_logs; " +
+                                    f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/mag " +
                                     "-c ~/mag.config " +
                                     f"--input ~/{tailStudyPath}/mag_samplesheet.csv " +
@@ -336,7 +348,10 @@ def create_dag():
                                     f"-r {MAG_VERSION} " +
                                     "--skip_gtdbtk --skip_spades --skip_spadeshybrid --skip_concoct " +
                                     "--kraken2_db ~/k2_pluspf_20240112.tar.gz " +
-                                    "--genomad_db ~/genomad_db")
+                                    "--genomad_db ~/genomad_db " +
+                                    f"-name {studyName}_{run_time} " +
+                                    "-resume"
+                            )
                             run_mag = cluster_manager.startClusterJob(cmd, task_id="run_mag", task_group=current_tasks)
 
                             watch_mag = cluster_manager.monitorClusterJob(
@@ -349,13 +364,16 @@ def create_dag():
 
                             cmd = (f"mkdir -p {tailStudyPath}/out/metatdenovo_logs; " +
                                     f"cd {tailStudyPath}/out/metatdenovo_logs; " +
+                                    f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/metatdenovo " +
                                     f"-r {METATDENOVO_VERSION} " +
                                     f"-work-dir ~/{tailStudyPath}/work/metatdenovo_work " +
                                     f"--input ~/{tailStudyPath}/metatdenovo_samplesheet.csv " +
                                     f"--outdir ~/{tailStudyPath}/out/metatdenovo_out " +
                                     f"-params-file ~/{tailStudyPath}/metatdenovo-params.json " +
-                                    "-c ~/metatdenovo.config"
+                                    "-c ~/metatdenovo.config " +
+                                    f"-name {studyName}_{run_time} " +
+                                    "-resume"
                             )
                             run_metatdenovo = cluster_manager.startClusterJob(cmd, task_id="run_metatdenovo", task_group=current_tasks)
 

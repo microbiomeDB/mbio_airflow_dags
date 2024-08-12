@@ -2,7 +2,7 @@
 args = commandArgs(trailingOnly=TRUE)
 
 if (length(args) < 1) {
-    stop("Usage: Rscript metatdenovo_postProcessing.R <output_dir>", call.=FALSE)
+    stop("Usage: Rscript mag_postProcessing.R <studyName> <output_dir>", call.=FALSE)
 }
 
 studyName <- args[1]
@@ -18,6 +18,11 @@ if (!dir.exists(outDir))
 if (!requireNamespace("data.table", quietly = TRUE))
     install.packages("data.table")
 
+# install dplyr if not already installed
+if (!requireNamespace("dplyr", quietly = TRUE))
+    install.packages("dplyr")
+    library(dplyr) # this one we attach bc i want the pipe %>% 
+
 # install TreeSummarizedExperiment if not already installed
 if (!requireNamespace("TreeSummarizedExperiment", quietly = TRUE)) {
     if (!requireNamespace("BiocManager", quietly = TRUE))
@@ -26,9 +31,7 @@ if (!requireNamespace("TreeSummarizedExperiment", quietly = TRUE)) {
 }
 
 if (!requireNamespace(("mia"), quietly = TRUE)) {
-    if (!requireNamespace("BiocManager", quietly = TRUE))
-        install.packages("BiocManager")
-    BiocManager::install("mia")
+    remotes::install_github('d-callan/mia@fix-importTaxpasta')
 }
 
 # install our own MicrobiomeDB if not already installed
@@ -38,7 +41,7 @@ if (!requireNamespace("MicrobiomeDB", quietly = TRUE))
 
 ## create TreeSummarizedExperiment
 ## TODO need to modify this as other profilers get added
-tse <- mia::importTaxpasta(paste0(outDir, "taxprofiler_out/taxpasta/kraken2_kraken_db.biom"))
+tse <- mia::importTaxpasta(paste0(outDir, "/taxprofiler_out/taxpasta/kraken2_kraken_db.biom"), addHierarchyTree = FALSE)
 
 if (dir.exists(paste0(outDir, "/sampleMetadata.tsv"))) {
     sampleMetadata <- data.table::fread(paste0(outDir, "/sampleMetadata.tsv"))
@@ -49,26 +52,32 @@ if (dir.exists(paste0(outDir, "/sampleMetadata.tsv"))) {
 }
 
 ## save TreeSummarizedExperiment as rda
-save(tse, file=paste0(outDir, studyName, "_treeSE.rda"))
+save(tse, file=paste0(outDir, "/", studyName, "_treeSE.rda"))
 
 ## make an MbioDataset, should TSS normalize and keep raw values as well by default
-dataset <- MicrobiomeDB::importTreeSE(tse)
+dataset <- MicrobiomeDB::importTreeSummarizedExperiment(tse)
 
-## TODO add metatdenovo output to MbioDataset
-## TODO file and col names are placeholders, based roughly on my memory
-eggnogData <- data.table::fread(paste0(outDir, "/metatdenovo_out/summarized_data/eggnog.tsv"))
-kofamData <- data.table::fread(paste0(outDir, "/metatdenovo_out/summarized_data/kofam.tsv"))
-geneCounts <- data.table::fread(paste0(outDir, "/metatdenovo_out/summarized_data/gene_counts.tsv"))
-recordIds <- names(geneCounts)[!names(geneCounts) %in% c("orf", "count", "tpm")]
+## preparing metatdenovo outputs
+eggnogData <- data.table::fread(paste0(outDir, "/metatdenovo_out/summary_tables/megahit.prokka.emapper.tsv.gz"))
+
+kofamData <- data.table::fread(paste0(outDir, "/metatdenovo_out/summary_tables/megahit.prokka.kofamscan.tsv.gz"))
+tmp <- kofamData %>% group_by(orf) %>% summarize(evalue=min(evalue))
+kofamData <- merge(tmp, kofamData, by = c('orf','evalue'))
+kofamData$description <- paste0(kofamData$ko, ": ", kofamData$ko_definition)
+
+geneCounts <- data.table::fread(paste0(outDir, "/metatdenovo_out/summary_tables/megahit.prokka.counts.tsv.gz"))
+recordIds <- 'sample' # name of col in geneCounts w sample names
 
 buildCollection <- function(dt, valueCol = c("count", "tpm"), collectionName) {
-    combinedData <- data.table::merge(dt, geneCounts, by = "orf")
-    combinedData$displayName <- paste0(combinedData$orf, " - ", combinedData$description)
-    keepCols <- c(recordIds, "displayName", valueCol)
-    combinedData <- combinedData[, keepCols, with = FALSE]
+    combinedData <- merge(dt, geneCounts, by = "orf")
+    combinedData$displayName <- gsub("[","(", combinedData$description, fixed=TRUE)
+    combinedData$displayName <- gsub("]", ")", combinedData$displayName, fixed=TRUE)
+    combinedData <- combinedData %>% group_by(displayName, sample) %>% summarize(value=sum(!!rlang::sym(valueCol)))
 
     ## tall to wide conversion
-    combinedData <- data.table::dcast(combinedData, displayName ~ recordIds, value.var = c(valueCol))
+    combinedData <- reshape(as.data.frame(combinedData), idvar = recordIds, timevar = 'displayName', direction = 'wide')
+    names(combinedData) <- gsub("value.", "", names(combinedData), fixed=TRUE)
+    names(combinedData)[names(combinedData) == recordIds] <- 'recordIDs'
 
     collection <- veupathUtils::Collection(
         data = combinedData,
@@ -77,18 +86,17 @@ buildCollection <- function(dt, valueCol = c("count", "tpm"), collectionName) {
         name = collectionName
     )
 
-    validObject(collection)
-
     return(collection)
 }
 
-eggnogCountsCollection <- buildCollection(eggnogData, "count", "eggnog annotated gene counts")
-eggnogTpmCollection <- buildCollection(eggnogData, "tpm", "eggnog annotated gene tpm")
+## NOTE: eggnog has ec numbers, reactions, pathways, etc also. 
+## these could be incorporated later, its unclear the best path to do that, biologically
+## these are often associated w multiple possible reactions and pathways
+eggnogCountsCollection <- buildCollection(eggnogData, "count", "counts: eggnog functional annotation of orfs")
+eggnogTpmCollection <- buildCollection(eggnogData, "tpm", "tpm: eggnog functional annotation of orfs")
 
-## TODO i think kofam gives ec numbers and pathways, not just descriptions
-## we should maybe include those as separate collections
-kofamCountsCollection <- buildCollection(kofamData, "count", "kofam annotated gene counts")
-kofamTpmCollection <- buildCollection(kofamData, "tpm", "kofam annotated gene tpm")
+kofamCountsCollection <- buildCollection(kofamData, "count", "counts: kofam scan functional annotation of orfs")
+kofamTpmCollection <- buildCollection(kofamData, "tpm", "tpm: kofam scan functional annotation of orfs")
 
 numExistingCollections <- length(dataset@collections)
 dataset@collections[[numExistingCollections + 1]] <- eggnogCountsCollection
@@ -96,10 +104,7 @@ dataset@collections[[numExistingCollections + 2]] <- eggnogTpmCollection
 dataset@collections[[numExistingCollections + 3]] <- kofamCountsCollection
 dataset@collections[[numExistingCollections + 4]] <- kofamTpmCollection
 
-## TODO add geNomad, etc from mag output to MbioDataset
-### looking at mag outputs, it doesnt seem to have run geNomad for some reason..
-
 validObject(dataset)
 
 ## save MbioDataset as rda
-save(dataset, file=paste0(outDir, studyName, "_mbioDataset.rda"))
+save(dataset, file=paste0(outDir, "/", studyName, "_mbioDataset.rda"))

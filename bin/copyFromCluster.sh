@@ -19,6 +19,7 @@ fi
 
 sumFile="$fromFile.sum"
 
+mkdir -p $toDir
 cd $toDir
 
 # copy and checksum

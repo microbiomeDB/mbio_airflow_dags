@@ -57,5 +57,7 @@ class ClusterJobSensor(BaseSensorOperator):
             return False
         elif (jobStatus == 'EXIT'):
             raise AirflowFailException(f"Job {self.jobId} has failed. See the cluster for additional information.")
+        elif (jobStatus == 'UNKWN'):
+            raise AirflowFailException(f"Job {self.jobId} status is unknown.")
         else:
             return True

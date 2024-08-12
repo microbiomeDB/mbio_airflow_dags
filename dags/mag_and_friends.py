@@ -1,5 +1,7 @@
 from airflow.models import DAG
 from airflow.utils.task_group import TaskGroup
+from airflow.operators.bash_operator import BashOperator
+from airflow.operators.python_operator import PythonOperator
 from airflow.decorators import task
 
 from os.path import join
@@ -334,8 +336,16 @@ def create_dag():
                                 task_group=current_tasks
                             )
 
+                            copy_taxprofiler_results_from_cluster = cluster_manager.copyFromCluster(
+                                f"{tailStudyPath}/out/taxprofiler_out",
+                                "taxpasta",
+                                f"{studyPath}/out/taxprofiler_out",
+                                gzip=False,
+                                task_id = "copy_taxprofiler_results_from_cluster",
+                                task_group=current_tasks
+                            )
+
                             # TODO maybe make a constant for ref db names?
-                            # TODO should clean up its work dir when its done
                             # wed move to that subdir of the study dir before launching these types of commands
                             cmd = (f"mkdir -p {tailStudyPath}/out/mag_logs; " +
                                     f"cd {tailStudyPath}/out/mag_logs; " +
@@ -385,25 +395,24 @@ def create_dag():
                                 task_group=current_tasks
                             )                        
 
-                            copy_results_from_cluster = cluster_manager.copyFromCluster(
-                                tailStudyPath, 
-                                "out", 
-                                studyPath,
+                            copy_metatdenovo_results_from_cluster = cluster_manager.copyFromCluster(
+                                f"{tailStudyPath}/out/metatdenovo_out", 
+                                "summary_tables", 
+                                f"{studyPath}/out/metatdenovo_out",
                                 gzip=False,
-                                task_id = "copy_results_from_cluster",
+                                task_id = "copy_metatdenovo_results_from_cluster",
                                 task_group=current_tasks
                             )
 
                             # this should make rda files for the r package via a dedicated Rscript
-                            @task(task_group=current_tasks)
-                            def post_process_results():
-                                # TODO make sure the out path is correct
-                                cmd = f"Rscript /data/MicrobiomeDB/mbio_airflow_dags/bin/mag_postProcessing.R {studyName} {studyPath}/out"
-                                return(cmd)
+                            post_process_results = BashOperator(
+                                task_id="post_process_results",
+                                bash_command=f"Rscript /data/MicrobiomeDB/mbio_airflow_dags/bin/mag_postProcessing.R {studyName} {studyPath}/out",
+                                task_group=current_tasks
+                            )
 
                             # this should either update or add a row to the study provenance file
-                            @task(task_group=current_tasks)
-                            def update_provenance():
+                            def update_provenance_callable():
 
                                 fieldnames = ['study', 'timestamp', 'mag_revision', 'metatdenovo_revision', 'taxprofiler_revision']
                                 # Update or append new data
@@ -426,22 +435,30 @@ def create_dag():
                                     # Write back to the file
                                     writer.writerows(all_data.values())
 
+                            update_provenance = PythonOperator(
+                                task_id="update_provenance",
+                                python_callable=update_provenance_callable,
+                                task_group=current_tasks
+                            )
+
                             copy_study_to_cluster >> \
                             run_mag >> \
                             watch_mag >> \
-                            copy_results_from_cluster >> \
-                            post_process_results() >> \
-                            update_provenance()
+                            update_provenance
 
                             copy_study_to_cluster >> \
                             run_metatdenovo >> \
                             watch_metatdenovo >> \
-                            copy_results_from_cluster 
+                            copy_metatdenovo_results_from_cluster >> \
+                            post_process_results >> \
+                            update_provenance
                             
                             copy_study_to_cluster >> \
                             run_taxprofiler >> \
                             watch_taxprofiler >> \
-                            copy_results_from_cluster
+                            copy_taxprofiler_results_from_cluster >> \
+                            post_process_results >> \
+                            update_provenance
 
                             if os.path.exists(accessionsFile):
                                 copy_study_to_cluster >> \

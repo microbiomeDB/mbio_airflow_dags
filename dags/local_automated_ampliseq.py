@@ -10,7 +10,7 @@ import textwrap
 from datetime import timedelta
 
 # Constants for file paths
-BASE_PATH = "/home/ruicatxiao/mbio_af_branch/local_testing_data_config"
+BASE_PATH = "<PATH TO LOCAL DATA FOLDER>"
 PROVENANCE_PATH = os.path.join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = os.path.join(BASE_PATH, "amplicon_studies.csv")
 CONFIG_PATH = os.path.join(BASE_PATH, "ampliseq.config")

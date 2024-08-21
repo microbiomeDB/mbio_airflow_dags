@@ -11,17 +11,17 @@ from airflow.sensors.base import BaseSensorOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 # Constants for file paths and configurations
-BASE_PATH = "/home/ruicatxiao/mbio_af_branch/local_testing_data_config"
+BASE_PATH = "<PATH TO LOCAL DATA FOLDER>"
 PROVENANCE_PATH = os.path.join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = os.path.join(BASE_PATH, "amplicon_studies.csv")
 CONFIG_PATH = os.path.join(BASE_PATH, "ampliseq.config")
 AMPLISEQ_VERSION = '2.9.0'
 USERNAME = 'ruicatx'
-KEY_FILE = '/home/ruicatxiao/.ssh/chmi_rsa'
+KEY_FILE = '<PATH TO SSH KEY FILE>'
 REMOTE_HOST_SFTP = 'mercury.pmacs.upenn.edu'
 REMOTE_HOST_SSH = 'consign.pmacs.upenn.edu'
-REMOTE_PATH = '/home/ruicatx/airflow'
-REMOTE_CONFIG = '/home/ruicatx/config'
+REMOTE_PATH = '<PATH TO REMOTE DATA FOLDER>'
+REMOTE_CONFIG = '<PATH TO REMOTE CONFIG FOLDER>'
 POKE_INTERVAL = 600  # Interval in seconds for checking job status
 
 # Default arguments for the DAG

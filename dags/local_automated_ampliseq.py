@@ -10,7 +10,7 @@ import textwrap
 from datetime import timedelta
 
 # Constants for file paths
-BASE_PATH = "<Path to directory with data>"
+BASE_PATH = "/home/ruicatxiao/mbio_af_branch/local_testing_data_config"
 PROVENANCE_PATH = os.path.join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = os.path.join(BASE_PATH, "amplicon_studies.csv")
 CONFIG_PATH = os.path.join(BASE_PATH, "ampliseq.config")
@@ -130,7 +130,7 @@ def create_dag():
                     'study_out_path': os.path.join(x['path'], "out"),
                     'study_config_path': CONFIG_PATH
                 })
-            ) >> BashOperator.partial(  # Chained
+            ) >> BashOperator.partial(  # Chained to ensure order
                 task_id='run_r_postprocessing',
                 bash_command=textwrap.dedent("""\
                     Rscript /data/MicrobiomeDB/mbio_airflow_dags/bin/ampliseq_postProcessing.R \
@@ -145,9 +145,9 @@ def create_dag():
 
         update_provenance_task = update_provenance(loaded_studies)
 
-        run_ampliseq >> update_provenance_task  
+        run_ampliseq >> update_provenance_task  # Ensure correct task order
 
         return dag
 
-
+# Define the DAG by calling the function
 ampliseq_pipeline = create_dag()

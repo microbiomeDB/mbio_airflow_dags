@@ -11,28 +11,26 @@ from airflow.sensors.base import BaseSensorOperator
 from airflow.utils.trigger_rule import TriggerRule
 
 # Constants for file paths and configurations
-BASE_PATH = "<path to local directory of data>"
+BASE_PATH = "/home/ruicatxiao/mbio_af_branch/local_testing_data_config"
 PROVENANCE_PATH = os.path.join(BASE_PATH, "processed_studies_provenance.csv")
 ALL_STUDIES_PATH = os.path.join(BASE_PATH, "amplicon_studies.csv")
 CONFIG_PATH = os.path.join(BASE_PATH, "ampliseq.config")
 AMPLISEQ_VERSION = '2.9.0'
-USERNAME = '<PMACS user name>'
-KEY_FILE = '<ssh key file location>'
+USERNAME = 'ruicatx'
+KEY_FILE = '/home/ruicatxiao/.ssh/chmi_rsa'
 REMOTE_HOST_SFTP = 'mercury.pmacs.upenn.edu'
 REMOTE_HOST_SSH = 'consign.pmacs.upenn.edu'
-REMOTE_PATH = '<path to PMACS directory for processing>'
-REMOTE_CONFIG = '<path to config and R script for executing pipeline>'
-POKE_INTERVAL = 300  # Interval in seconds for PMACS job sensor
+REMOTE_PATH = '/home/ruicatx/airflow'
+REMOTE_CONFIG = '/home/ruicatx/config'
+POKE_INTERVAL = 600  # Interval in seconds for checking job status
 
-
+# Default arguments for the DAG
 default_args = {
     'start_date': pendulum.datetime(2021, 1, 1, tz="UTC"),
-    # Needed this to counter for AirFlow logging error induced task failuer
-    "retries": 10,
-    'retry_delay': timedelta(seconds=2),
+    "retries": 20,
+    'retry_delay': timedelta(seconds=10),
 }
 
-# This is for submitting shell script on PMACS
 class CustomSSHOperator(SSHOperator):
     template_fields = ()  # Override to prevent command field from being templated
 
@@ -40,7 +38,6 @@ class CustomSSHOperator(SSHOperator):
         logging.info(f"Executing command: {self.command}")
         return super().execute(context)
 
-# Job sensing
 class JobStatusSensor(BaseSensorOperator):
     def __init__(self, remote_host, username, key_file, *args, **kwargs):
         super(JobStatusSensor, self).__init__(*args, **kwargs)
@@ -64,16 +61,14 @@ class JobStatusSensor(BaseSensorOperator):
             logging.error(f"Error checking job status: {e}")
             return False
 
-
-# Main DAG start
 def create_dag():
     with DAG(
-        dag_id="rx_test_remote_ampliseq_v1",
+        dag_id="rx_test_remote_ampliseq_v2",
         schedule_interval=None,
         default_args=default_args,
         catchup=False,
     ) as dag:
-        # loading studies
+
         @dag.task()
         def load_studies():
             logging.info("Loading studies...")
@@ -97,7 +92,6 @@ def create_dag():
                         run_location = row['RunLocation']
                         samplesheet_path = os.path.join(study_path, "samplesheet.csv")
 
-                        # Skipping any samples marked to be executed locally
                         if run_location == "local":
                             logging.info(f"Skipping study {study} as it has a local RunLocation.")
                             continue
@@ -162,12 +156,13 @@ def create_dag():
                 writer.writerows(all_data.values())
                 logging.info(f"Updated provenance for studies: {', '.join([s['study'] for s in studies])}")
 
+
         @dag.task()
-        def create_shell_script(study):
-            logging.info(f"Creating shell script for study {study['study']}...")
+        def create_shell_script_nextflow(study):
+            logging.info(f"Creating Nextflow shell script for study {study['study']}...")
             timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            script_name = f"{study['study']}_{timestamp}.sh"
-            job_name = f"{study['study']}_{timestamp}"
+            job_name = f"{study['study']}_{timestamp}_nextflow"
+            script_name = f"{study['study']}_nextflow_{timestamp}.sh"
             script_content = f'''#!/bin/bash
 #BSUB -J {job_name}
 mkdir -p {REMOTE_PATH}/{study['study']}/out
@@ -179,16 +174,36 @@ nextflow run nf-core/ampliseq -with-tower -r {AMPLISEQ_VERSION} \
 -c {REMOTE_CONFIG}/ampliseq.config \
 -profile singularity
 echo "nextflow_done"
-module load R/4.0.2
-module list
-Rscript {REMOTE_CONFIG}/ampliseq_postProcessing.R {REMOTE_PATH}/{study['study']}/out
-echo "postprocessing_done"
 exit
-            '''
+    '''
             script_path = os.path.join(study['path'], script_name)
             with open(script_path, 'w') as file:
                 file.write(script_content)
             return {"study": study, "script_name": script_name}
+
+
+        @dag.task(trigger_rule=TriggerRule.ALL_SUCCESS)
+        def create_shell_script_Rscript(study):
+            logging.info(f"Creating Rscript shell script for study {study['study']}...")
+            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+            job_name = f"{study['study']}_{timestamp}_Rscript"
+            script_name = f"{study['study']}_Rscript_{timestamp}.sh"
+            script_content = f'''#!/bin/bash
+#BSUB -J {job_name}
+module load R/4.0.2
+export R_LIBS="/home/ruicatx/config/Rlib"
+Rscript {REMOTE_CONFIG}/ampliseq_postProcessing.R {study['study']} {REMOTE_PATH}/{study['study']}/out
+echo "postprocessing_done"
+exit
+    '''
+            script_path = os.path.join(study['path'], script_name)
+            with open(script_path, 'w') as file:
+                file.write(script_content)
+            return {"study": study, "script_name": script_name}
+
+
+
+
 
         @dag.task(trigger_rule=TriggerRule.ALL_SUCCESS)
         def compress_local_directory(study):
@@ -254,13 +269,13 @@ exit
             ssh_op.execute(context={})
 
         @dag.task(trigger_rule=TriggerRule.ALL_SUCCESS)
-        def submit_script(script_info):
+        def submit_nextflow_script(script_info):
             logging.info(f"Submitting script for study {script_info['study']['study']}...")
             study = script_info["study"]
             script_name = script_info["script_name"]
             command = f'bsub -n 64 -M 250000 -R "rusage[mem=250000] span[hosts=1]" sh {REMOTE_PATH}/{study["study"]}/{script_name}'
             return CustomSSHOperator(
-                task_id='submit_script_' + study['study'],
+                task_id='submit_nextflow_script_' + study['study'],
                 ssh_hook=SSHHook(
                     remote_host=REMOTE_HOST_SSH,
                     username=USERNAME,
@@ -269,17 +284,54 @@ exit
                 command=command,
             ).execute(context={})
 
+
         @dag.task(trigger_rule=TriggerRule.ALL_SUCCESS)
-        def monitor_status(study):
-            logging.info(f"Monitoring job status for study {study['study']}...")
+        def monitor_status_nextflow(study):
+            logging.info(f"Monitoring Nextflow job status for study {study['study']}...")
             job_sensor = JobStatusSensor(
-                task_id=f"monitor_status_{study['study']}",
+                task_id=f"monitor_status_nextflow_{study['study']}",
                 remote_host=REMOTE_HOST_SSH,
                 username=USERNAME,
                 key_file=KEY_FILE,
                 poke_interval=POKE_INTERVAL,
             )
             return job_sensor.execute(context={})
+
+
+
+
+        @dag.task(trigger_rule=TriggerRule.ALL_SUCCESS)
+        def submit_script_Rscript(script_info):
+            logging.info(f"Submitting Rscript shell script for study {script_info['study']['study']}...")
+            study = script_info["study"]
+            script_name = script_info["script_name"]
+            command = f'bsub -n 64 -M 250000 -R "rusage[mem=250000] span[hosts=1]" sh {REMOTE_PATH}/{study["study"]}/{script_name}'
+            return CustomSSHOperator(
+                task_id='submit_script_Rscript_' + study['study'],
+                ssh_hook=SSHHook(
+                    remote_host=REMOTE_HOST_SSH,
+                    username=USERNAME,
+                    key_file=KEY_FILE
+                ),
+                command=command,
+            ).execute(context={})
+
+
+
+        @dag.task(trigger_rule=TriggerRule.ALL_SUCCESS)
+        def monitor_status_Rscript(study):
+            logging.info(f"Monitoring Rscript job status for study {study['study']}...")
+            job_sensor = JobStatusSensor(
+                task_id=f"monitor_status_Rscript_{study['study']}",
+                remote_host=REMOTE_HOST_SSH,
+                username=USERNAME,
+                key_file=KEY_FILE,
+                poke_interval=POKE_INTERVAL,
+            )
+            return job_sensor.execute(context={})
+
+
+
 
         @dag.task(trigger_rule=TriggerRule.ALL_SUCCESS)
         def compress_remote_results(study):
@@ -351,21 +403,32 @@ exit
         loaded_studies = load_studies()
 
         with TaskGroup("process_amplicon_studies") as process_amplicon_studies:
-            script_names = create_shell_script.expand(study=loaded_studies)
+
+
+            script_names_nextflow = create_shell_script_nextflow.expand(study=loaded_studies)
+            script_names_Rscript = create_shell_script_Rscript.expand(study=loaded_studies)
+            
             tar_infos = compress_local_directory.expand(study=loaded_studies)
             transfer_compressed_directory = transfer_compressed_directory.expand(tar_info=tar_infos)
             extract_remote_directory = extract_remote_directory.expand(tar_info=tar_infos)
             editing_remote_samplesheet = editing_remote_samplesheet.expand(study=loaded_studies)
-            submit_script = submit_script.expand(script_info=script_names)
-            monitor_status = monitor_status.expand(study=loaded_studies)
+            
+            submit_nextflow_script_task = submit_nextflow_script.expand(script_info=script_names_nextflow)
+            monitor_status_nextflow = monitor_status_nextflow.expand(study=loaded_studies)
+            
+            submit_script_Rscript = submit_script_Rscript.expand(script_info=script_names_Rscript)
+            monitor_status_Rscript = monitor_status_Rscript.expand(study=loaded_studies)
+            
             compress_remote_results = compress_remote_results.expand(study=loaded_studies)
             transfer_compressed_results = transfer_compressed_results.expand(study=loaded_studies)
             extract_results_file = extract_results_file.expand(study=loaded_studies)
 
-            # Define explicit task dependencies within the TaskGroup to enforce sequential execution
-            script_names >> tar_infos >> transfer_compressed_directory >> extract_remote_directory \
-            >> editing_remote_samplesheet >> submit_script >> monitor_status \
-            >> compress_remote_results >> transfer_compressed_results >> extract_results_file
+            # Adjusted workflow to reflect the correct sequence
+            script_names_nextflow >> script_names_Rscript >> tar_infos >> transfer_compressed_directory >> extract_remote_directory \
+            >> editing_remote_samplesheet >> submit_nextflow_script_task >> monitor_status_nextflow \
+            >> submit_script_Rscript >> monitor_status_Rscript >> compress_remote_results >> transfer_compressed_results >> extract_results_file
+
+
 
         # Main DAG dependencies
         loaded_studies >> process_amplicon_studies

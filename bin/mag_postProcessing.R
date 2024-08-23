@@ -42,13 +42,16 @@ if (!requireNamespace("MicrobiomeDB", quietly = TRUE))
 ## create TreeSummarizedExperiment
 ## TODO need to modify this as other profilers get added
 tse <- mia::importTaxpasta(paste0(outDir, "/taxprofiler_out/taxpasta/kraken2_kraken_db.biom"), addHierarchyTree = FALSE)
+## these names should be the sra run ids
+colnames(tse@assays@data[[1]]) <- veupathUtils::strSplit(colnames(tse@assays@data[[1]]), "_", 5, 3)
 
-if (dir.exists(paste0(outDir, "/sampleMetadata.tsv"))) {
-    sampleMetadata <- data.table::fread(paste0(outDir, "/sampleMetadata.tsv"))
+sampleMetadataFilePath <- file.path(dirname(outDir), "/sampleMetadata.tsv")
+if (file.exists(sampleMetadataFilePath)) {
+    sampleMetadata <- data.table::fread(sampleMetadataFilePath)
     names(sampleMetadata)[names(sampleMetadata) == 'name'] <- 'recordIDs'
 
     ## add sampleMetadata to TreeSummarizedExperiment
-    colData(tse) <- sampleMetadata
+    SummarizedExperiment::colData(tse) <- S4Vectors::DataFrame(sampleMetadata)
 }
 
 ## save TreeSummarizedExperiment as rda

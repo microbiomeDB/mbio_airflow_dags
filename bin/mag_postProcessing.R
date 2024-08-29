@@ -51,7 +51,7 @@ if (file.exists(sampleMetadataFilePath)) {
     names(sampleMetadata)[names(sampleMetadata) == 'name'] <- 'recordIDs'
 
     ## add sampleMetadata to TreeSummarizedExperiment
-    SummarizedExperiment::colData(tse) <- S4Vectors::DataFrame(sampleMetadata)
+    SummarizedExperiment::colData(tse) <- S4Vectors::DataFrame(sampleMetadata, row.names = sampleMetadata$recordIDs)
 }
 
 ## save TreeSummarizedExperiment as rda

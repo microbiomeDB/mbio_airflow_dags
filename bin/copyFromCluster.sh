@@ -19,6 +19,7 @@ fi
 
 sumFile="$fromFile.sum"
 
+mkdir -p $toDir
 cd $toDir
 
 # copy and checksum
@@ -43,7 +44,7 @@ if [[ $deleteAfter = true ]]; then
     ssh -2 $sshTarget "cd $fromDir; rm -rf $fromFile"
 fi
 
-if [[ ! -f $toDir/$fromFile ]]; then
-    echo "File did not successfully copy to $toDir/$fromFile"
+if [[ ! -f $toDir/$fromFile ]] && [[ ! -d $toDir/$fromFile ]]; then
+    echo "File or directory did not successfully copy to $toDir/$fromFile"
     exit 1
 fi

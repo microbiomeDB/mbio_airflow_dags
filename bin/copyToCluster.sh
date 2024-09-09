@@ -20,8 +20,8 @@ sumFile="$fromFile.sum"
 
 cd $fromDir
 # check fromFile exists
-if [[ ! -f $fromFile ]]; then
-    echo "File $fromFile does not exist in $fromDir"
+if [[ ! -f $fromFile ]] && [[ ! -d $fromFile ]]; then
+    echo "File or directory $fromFile does not exist in $fromDir"
     exit 1
 fi
 

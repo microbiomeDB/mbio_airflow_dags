@@ -310,9 +310,19 @@ def create_dag():
                                 )
 
                             elif not os.path.exists(os.path.join(studyPath, "mag_samplesheet.csv")):
-                                raise Exception(f"No *samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
+                                raise Exception(f"No mag_samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
+                            elif not os.path.exists(os.path.join(studyPath, "metatdenovo_samplesheet.csv")):
+                                raise Exception(f"No metatdenovo_samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
+                            elif not os.path.exists(os.path.join(studyPath, "taxprofiler_samplesheet.csv")):
+                                raise Exception(f"No taxprofiler_samplesheet.csv or accessions.tsv found for {studyName} in {studyPath}")
 
+                            # this should make the necessary out dir,
+                            # if any references to the local data dir (rather than remote) exist then update them,
+                            # move to the directory where we want the log file for this nf run to live
+                            # then launch nf using a specific version of both nf and the specific pipeline
+                            # for now its using the resume flag, to reuse any existing work w same config
                             cmd = (f"mkdir -p {tailStudyPath}/out/taxprofiler_logs; " +
+                                   f"sed -i 's|{headStudyPath}|~|g {tailStudyPath/taxprofiler_samplesheet.csv; " +
                                     f"cd {tailStudyPath}/out/taxprofiler_logs; " +
                                     f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/taxprofiler " +
@@ -348,6 +358,7 @@ def create_dag():
                             # TODO maybe make a constant for ref db names?
                             # wed move to that subdir of the study dir before launching these types of commands
                             cmd = (f"mkdir -p {tailStudyPath}/out/mag_logs; " +
+                                    f"sed -i 's|{headStudyPath}|~|g {tailStudyPath/mag_samplesheet.csv; "  +
                                     f"cd {tailStudyPath}/out/mag_logs; " +
                                     f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/mag " +
@@ -373,6 +384,7 @@ def create_dag():
                             )
 
                             cmd = (f"mkdir -p {tailStudyPath}/out/metatdenovo_logs; " +
+                                    f"sed -i 's|{headStudyPath}|~|g {tailStudyPath/metatdenovo_samplesheet.csv; " +
                                     f"cd {tailStudyPath}/out/metatdenovo_logs; " +
                                     f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/metatdenovo " +

@@ -158,6 +158,14 @@ def create_dag():
             task_id = "copy_samplesheet_templates_to_cluster"
         )
 
+        copy_utils_to_cluster = cluster_manager.copyToCluster(
+            BASE_PATH,
+            'replaceInline.sh',
+            '.',
+            gzip=False,
+            task_id = "copy_utils_to_cluster"
+        )
+
         get_kraken_db = cluster_manager.startClusterJob(
             "if [[ ! -f k2_pluspf_20240112.tar.gz ]]; then wget https://genome-idx.s3.amazonaws.com/kraken/k2_pluspf_20240112.tar.gz; fi;",
             task_id = "get_kraken_db",
@@ -322,7 +330,7 @@ def create_dag():
                             # then launch nf using a specific version of both nf and the specific pipeline
                             # for now its using the resume flag, to reuse any existing work w same config
                             cmd = (f"mkdir -p {tailStudyPath}/out/taxprofiler_logs; " +
-                                   f"sed -i 's|{headStudyPath}|~|g {tailStudyPath}/taxprofiler_samplesheet.csv; " +
+                                   f"sh replaceInline.sh {headStudyPath} ~ {tailStudyPath}/taxprofiler_samplesheet.csv; " +
                                     f"cd {tailStudyPath}/out/taxprofiler_logs; " +
                                     f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/taxprofiler " +
@@ -358,7 +366,7 @@ def create_dag():
                             # TODO maybe make a constant for ref db names?
                             # wed move to that subdir of the study dir before launching these types of commands
                             cmd = (f"mkdir -p {tailStudyPath}/out/mag_logs; " +
-                                    f"sed -i 's|{headStudyPath}|~|g {tailStudyPath}/mag_samplesheet.csv; "  +
+                                    f"sh replaceInline.sh {headStudyPath} ~ {tailStudyPath}/mag_samplesheet.csv; "  +
                                     f"cd {tailStudyPath}/out/mag_logs; " +
                                     f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/mag " +
@@ -384,7 +392,7 @@ def create_dag():
                             )
 
                             cmd = (f"mkdir -p {tailStudyPath}/out/metatdenovo_logs; " +
-                                    f"sed -i 's|{headStudyPath}|~|g {tailStudyPath}/metatdenovo_samplesheet.csv; " +
+                                    f"sh replaceInline.sh {headStudyPath} ~ {tailStudyPath}/metatdenovo_samplesheet.csv; " +
                                     f"cd {tailStudyPath}/out/metatdenovo_logs; " +
                                     f"NXF_VER={NEXTFLOW_VERSION} " +
                                     "nextflow run nf-core/metatdenovo " +
@@ -492,6 +500,7 @@ def create_dag():
 
                             copy_pipeline_configs >> current_tasks
                             copy_samplesheet_templates_to_cluster >> current_tasks
+                            copy_utils_to_cluster >> current_tasks
                             manage_reference_dbs >> current_tasks
 
         else:

@@ -1,0 +1,5 @@
+study,studyPath
+mock,/home/ruicatxiao/mbio_af_branch/local_testing_data_config/mock_study
+test,/home/ruicatxiao/mbio_af_branch/local_testing_data_config/test_study
+try,/home/ruicatxiao/mbio_af_branch/local_testing_data_config/try_study
+1more,/home/ruicatxiao/mbio_af_branch/local_testing_data_config/1more_study
